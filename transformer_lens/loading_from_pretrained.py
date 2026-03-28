@@ -855,14 +855,17 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
         official_model_name = get_official_model_name(model_name)
 
     # Load HuggingFace model config
+    huggingface_token = os.environ.get("HF_TOKEN", "")
+    hf_config = AutoConfig.from_pretrained(
+        official_model_name,
+        token=huggingface_token if len(huggingface_token) > 0 else None,
+        **kwargs,
+    )
+
+    # Determine architecture: override by name for models where AutoConfig
+    # doesn't return the right architecture, otherwise use HF config.
     if "llama" in official_model_name.lower():
         architecture = "LlamaForCausalLM"
-        huggingface_token = os.environ.get("HF_TOKEN", "")
-        hf_config = AutoConfig.from_pretrained(
-            official_model_name,
-            token=huggingface_token if len(huggingface_token) > 0 else None,
-            **kwargs,
-        )
     elif "gemma-3" in official_model_name.lower() or "medgemma" in official_model_name.lower():
         # Gemma 3: 270M and 1B are text-only (CausalLM), 4B+ are multimodal (ConditionalGeneration)
         # Exception: medgemma-27b-text-it is text-only
@@ -879,12 +882,6 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
     elif "gemma" in official_model_name.lower():
         architecture = "GemmaForCausalLM"
     else:
-        huggingface_token = os.environ.get("HF_TOKEN", "")
-        hf_config = AutoConfig.from_pretrained(
-            official_model_name,
-            token=huggingface_token if len(huggingface_token) > 0 else None,
-            **kwargs,
-        )
         architecture = hf_config.architectures[0]
 
     cfg_dict: dict[str, Any]
