@@ -5,6 +5,7 @@ from transformer_lens import HookedTransformer, utils
 from transformer_lens.past_key_value_caching import HookedTransformerKeyValueCache
 
 
+@pytest.mark.needs_model("gpt2", "facebook/opt-125m")
 class TestLeftPadding:
     prompts = [
         "Hello world!",
@@ -45,20 +46,11 @@ class TestLeftPadding:
             atol=atol,
         )
 
-    # fixtures
-    @pytest.fixture(scope="class", params=["gpt2-small", "facebook/opt-125m"])
-    def model_name(self, request):
-        return request.param
-
-    @pytest.fixture(scope="class")
-    def model(self, model_name):
-        model = HookedTransformer.from_pretrained(model_name)
-        return model
-
     # tests
     @pytest.mark.parametrize("padding_side", ["left", "right"])
     @pytest.mark.parametrize("prepend_bos", [True, False])
-    def test_pos_embed(self, model, padding_side, prepend_bos):
+    def test_pos_embed(self, loaded_model, padding_side, prepend_bos):
+        model = loaded_model
         # setup
         model.tokenizer.padding_side = padding_side
 
@@ -96,7 +88,8 @@ class TestLeftPadding:
 
     @pytest.mark.parametrize("padding_side", ["left", "right"])
     @pytest.mark.parametrize("prepend_bos", [True, False])
-    def test_pos_embed_with_cache(self, model, padding_side, prepend_bos):
+    def test_pos_embed_with_cache(self, loaded_model, padding_side, prepend_bos):
+        model = loaded_model
         # setup
         model.tokenizer.padding_side = padding_side
 
@@ -142,7 +135,8 @@ class TestLeftPadding:
         # padded positions should have zero pos_embed
         assert output_pos_embed[~attention_mask_2.bool()].sum() == 0
 
-    def test_left_padding_by_comparing_outputs(self, model):
+    def test_left_padding_by_comparing_outputs(self, loaded_model):
+        model = loaded_model
         prompts = self.prompts
 
         num_str_tokens_list = [len(t) for t in model.to_str_tokens(prompts)]

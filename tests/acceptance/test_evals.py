@@ -9,70 +9,70 @@ from transformer_lens.evals import (
 from transformer_lens.HookedTransformer import HookedTransformer
 
 
-@pytest.fixture(scope="module")
-def model():
-    return HookedTransformer.from_pretrained("gpt2-small", device="cpu")
-
-
-def test_basic_ioi_eval(model):
+@pytest.mark.needs_model("gpt2")
+def test_basic_ioi_eval(loaded_model):
     """
     Test IOI evaluation with default dataset and settings.
     """
-    results = ioi_eval(model, num_samples=100)
+    results = ioi_eval(loaded_model, num_samples=100)
     assert results["Accuracy"] >= 0.99
 
 
-def test_symmetric_samples(model):
+@pytest.mark.needs_model("gpt2")
+def test_symmetric_samples(loaded_model):
     """
     Test IOI evaluation with symmetric=True so prompts are in symmetric pairs.
     """
-    ds = IOIDataset(tokenizer=model.tokenizer, num_samples=100, symmetric=True)
-    results = ioi_eval(model, dataset=ds)
+    ds = IOIDataset(tokenizer=loaded_model.tokenizer, num_samples=100, symmetric=True)
+    results = ioi_eval(loaded_model, dataset=ds)
     assert results["Logit Difference"] > 2.0
     assert results["Accuracy"] > 0.9
 
 
-def test_custom_dataset_ioi_eval(model):
+@pytest.mark.needs_model("gpt2")
+def test_custom_dataset_ioi_eval(loaded_model):
     """
     Test IOI eval with custom dataset using different templates, names, and objects.
     """
     ds = IOIDataset(
-        tokenizer=model.tokenizer,
+        tokenizer=loaded_model.tokenizer,
         num_samples=100,
         templates=["[A] met with [B]. [B] gave the [OBJECT] to [A]"],
         names=["Alice", "Bob", "Charlie"],
         nouns={"OBJECT": ["ball", "book"]},
     )
-    results = ioi_eval(model, dataset=ds)
+    results = ioi_eval(loaded_model, dataset=ds)
     assert results["Logit Difference"] > 2.0
     assert results["Accuracy"] >= 0.99
 
 
-def test_multitoken_names_ioi_eval(model):
+@pytest.mark.needs_model("gpt2")
+def test_multitoken_names_ioi_eval(loaded_model):
     """
     Test the IOI evaluation with multi-token names in the dataset.
     """
     ds = IOIDataset(
-        tokenizer=model.tokenizer,
+        tokenizer=loaded_model.tokenizer,
         num_samples=100,
         names=["John Smith", "John Doe"],
     )
-    results = ioi_eval(model, dataset=ds)
+    results = ioi_eval(loaded_model, dataset=ds)
     assert results["Logit Difference"] > 2.0
     assert results["Accuracy"] >= 0.99
 
 
-def test_inverted_template(model):
+@pytest.mark.needs_model("gpt2")
+def test_inverted_template(loaded_model):
     """
     Test IOI eval with an unnatural template (BAAA).
     This should result in a negative logit difference and very low accuracy.
     """
     ds = IOIDataset(
-        tokenizer=model.tokenizer,
+        tokenizer=loaded_model.tokenizer,
         num_samples=100,
         templates=["[B] met with [A]. [A] said hello to [A]"],
     )
-    results = ioi_eval(model, dataset=ds)
+    results = ioi_eval(loaded_model, dataset=ds)
     assert results["Logit Difference"] < -2.0
     assert results["Accuracy"] <= 0.01
 
@@ -111,12 +111,13 @@ def test_mmlu_data_loader_invalid_subject():
         make_mmlu_data_loader(subjects="invalid_subject_name")
 
 
-def test_mmlu_eval_single_subject(model):
+@pytest.mark.needs_model("gpt2")
+def test_mmlu_eval_single_subject(loaded_model):
     """
     Test MMLU evaluation on a single subject with a small number of samples.
     Uses a small model and few samples for fast CI execution.
     """
-    results = mmlu_eval(model, subjects="abstract_algebra", num_samples=5)
+    results = mmlu_eval(loaded_model, subjects="abstract_algebra", num_samples=5)
     assert "accuracy" in results
     assert "num_correct" in results
     assert "num_total" in results
@@ -127,12 +128,13 @@ def test_mmlu_eval_single_subject(model):
     assert "abstract_algebra" in results["subject_scores"]
 
 
-def test_mmlu_eval_multiple_subjects(model):
+@pytest.mark.needs_model("gpt2")
+def test_mmlu_eval_multiple_subjects(loaded_model):
     """
     Test MMLU evaluation on multiple subjects.
     """
     subjects = ["abstract_algebra", "anatomy"]
-    results = mmlu_eval(model, subjects=subjects, num_samples=3)
+    results = mmlu_eval(loaded_model, subjects=subjects, num_samples=3)
     assert results["num_total"] == 6  # 3 samples per subject
     assert len(results["subject_scores"]) == 2
     assert all(subject in results["subject_scores"] for subject in subjects)

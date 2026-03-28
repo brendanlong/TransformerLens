@@ -4,23 +4,27 @@ import torch as t
 from transformer_lens import HookedTransformer
 from transformer_lens.past_key_value_caching import HookedTransformerKeyValueCache
 
-
-# Pythia models seem to have some kind of numerical stability issue.
+# Tolerance per model — Pythia has numerical stability issues.
 # See: https://github.com/TransformerLensOrg/TransformerLens/issues/385
-@pytest.fixture(scope="session", params=[("gpt2-small", 1e-4), ("pythia-14m", 1e-2)])
-def model_and_atol(request):
-    return request.param
+_ATOL = {
+    "gpt2": 1e-4,
+    "EleutherAI/pythia-14m": 1e-2,
+}
 
 
 @pytest.fixture(scope="session")
-def pretrained(model_and_atol):
-    name, atol = model_and_atol
-    model = HookedTransformer.from_pretrained(name, default_padding_side="left")
+def kv_model_and_atol(current_model_name):
+    """Load the model with left padding (can't reuse loaded_model) and return (model, atol)."""
+    atol = _ATOL.get(current_model_name)
+    if atol is None:
+        pytest.skip(f"kv_cache tests not configured for {current_model_name}")
+    model = HookedTransformer.from_pretrained(current_model_name, default_padding_side="left")
     return model, atol
 
 
-def test_single_new_token(pretrained):
-    model, atol = pretrained
+@pytest.mark.needs_model("gpt2", "EleutherAI/pythia-14m")
+def test_single_new_token(kv_model_and_atol):
+    model, atol = kv_model_and_atol
     pre_prompt = "I went to Staten Island,"
     pre_prompt_tokens = model.to_tokens(pre_prompt)
     pre_prompt_tokens_len = pre_prompt_tokens.shape[-1]
@@ -45,8 +49,9 @@ def test_single_new_token(pretrained):
     assert t.allclose(no_cache_logits[:, -1:], with_cache_logits, atol=atol)
 
 
-def test_multiple_new_tokens(pretrained):
-    model, atol = pretrained
+@pytest.mark.needs_model("gpt2", "EleutherAI/pythia-14m")
+def test_multiple_new_tokens(kv_model_and_atol):
+    model, atol = kv_model_and_atol
     pre_prompt = "I went to Staten Island,"
     pre_prompt_tokens = model.to_tokens(pre_prompt)
     pre_prompt_tokens_len = pre_prompt_tokens.shape[-1]
@@ -72,10 +77,11 @@ def test_multiple_new_tokens(pretrained):
     assert t.allclose(no_cache_logits[:, -new_tokens_len:], with_cache_logits, atol=atol)
 
 
+@pytest.mark.needs_model("gpt2", "EleutherAI/pythia-14m")
 @pytest.mark.parametrize("pre_padding", ["left", "right", None])
 @pytest.mark.parametrize("post_padding", ["left", "right", None])
-def test_multi_token_batch(pretrained, pre_padding, post_padding):
-    model, atol = pretrained
+def test_multi_token_batch(kv_model_and_atol, pre_padding, post_padding):
+    model, atol = kv_model_and_atol
     padded_batch_pre_prompts = [
         "It's always locked",
         "I'd rather be burned in Canada",
@@ -141,8 +147,9 @@ def test_multi_token_batch(pretrained, pre_padding, post_padding):
     assert t.allclose(no_cache_probs, with_cache_probs, atol=atol)
 
 
-def test_freeze_cache(pretrained):
-    model, atol = pretrained
+@pytest.mark.needs_model("gpt2", "EleutherAI/pythia-14m")
+def test_freeze_cache(kv_model_and_atol):
+    model, atol = kv_model_and_atol
     pre_prompt = "I went to Staten Island,"
     pre_prompt_tokens = model.to_tokens(pre_prompt)
     post_prompt_1 = " I'm headed to the church to play bingo."
@@ -213,8 +220,9 @@ def test_freeze_cache(pretrained):
     assert not t.allclose(with_cache_logits_1, with_cache_2_logits_1, atol=atol)
 
 
-def test_kv_cache_with_custom_attention_mask(pretrained):
-    model, atol = pretrained
+@pytest.mark.needs_model("gpt2", "EleutherAI/pythia-14m")
+def test_kv_cache_with_custom_attention_mask(kv_model_and_atol):
+    model, atol = kv_model_and_atol
     prompt_pre = "An apple"
     prompt_post = " a day keeps junk the"
     prompt_whole = "An apple a day keeps the"
@@ -235,8 +243,9 @@ def test_kv_cache_with_custom_attention_mask(pretrained):
     assert t.allclose(correct_logits[:, -1], exp_logits[:, -1], atol=atol)
 
 
-def test_kv_cache_and_start_at_layer(pretrained):
-    model, atol = pretrained
+@pytest.mark.needs_model("gpt2", "EleutherAI/pythia-14m")
+def test_kv_cache_and_start_at_layer(kv_model_and_atol):
+    model, atol = kv_model_and_atol
     pre_prompt = "I went to Staten Island,"
     pre_prompt_tokens = model.to_tokens(pre_prompt)
     pre_prompt_tokens_len = pre_prompt_tokens.shape[-1]

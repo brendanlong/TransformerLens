@@ -13,7 +13,6 @@ from transformer_lens.loading_from_pretrained import (
     OFFICIAL_MODEL_NAMES,
     get_official_model_name,
 )
-from transformer_lens.utils import clear_huggingface_cache
 
 TINY_STORIES_MODEL_NAMES = [
     name for name in OFFICIAL_MODEL_NAMES if name.startswith("roneneldan/TinyStories")
@@ -31,46 +30,9 @@ TINY_STORIES_TEST_MODELS = (
 )
 PYTHIA_TEST_MODELS = PYTHIA_MODEL_NAMES if os.environ.get("HF_TOKEN", "") else PYTHIA_SMALL_MODELS
 
-# Small models for basic testing
-PUBLIC_MODEL_NAMES = [
-    "attn-only-demo",
-    "gpt2-small",
-    "opt-125m",
-    "pythia-70m",
-    "tiny-stories-33M",
-    "microsoft/phi-1",
-    "google/gemma-2b",
-]
-
-# Full set of models to test
-FULL_MODEL_NAMES = [
-    "attn-only-demo",
-    "gpt2-small",
-    "opt-125m",
-    "gpt-neo-125M",
-    "stanford-gpt2-small-a",
-    "solu-4l-old",
-    "solu-6l",
-    "attn-only-3l",
-    "pythia",
-    "gelu-2l",
-    "othello-gpt",
-    "tiny-stories-33M",
-    "bloom-560m",
-    "santacoder",
-    "microsoft/phi-1",
-    "microsoft/phi-1_5",
-    "microsoft/phi-2",
-    "google/gemma-2b",
-    "google/gemma-7b",
-]
-
-# Use full model list if HF_TOKEN is available, otherwise use public models only
-model_names = FULL_MODEL_NAMES if os.environ.get("HF_TOKEN", "") else PUBLIC_MODEL_NAMES
-
 text = "Hello world!"
 
-""" 
+"""
 # Code to regenerate loss store
 store = {}
 for name in model_names:
@@ -80,31 +42,30 @@ for name in model_names:
 print(store)
 """
 
-# Loss values for minimal testing
-SMALL_LOSS_STORE = {
-    "gpt2-small": 5.331855773925781,
-    "pythia-70m": 4.659344673156738,
-}
-
-# Full set of loss values
+# Loss values — keyed by official model name (what get_official_model_name returns)
 FULL_LOSS_STORE = {
     "attn-only-demo": 5.701841354370117,
-    "gpt2-small": 5.331855773925781,
-    "opt-125m": 6.159054279327393,
-    "gpt-neo-125M": 4.900552272796631,
+    "gpt2": 5.331855773925781,
+    "facebook/opt-125m": 6.159054279327393,
+    "EleutherAI/gpt-neo-125M": 4.900552272796631,
     "stanford-gpt2-small-a": 5.652035713195801,
     "solu-4l-old": 5.6021833419799805,
     "solu-6l": 5.7042999267578125,
     "attn-only-3l": 5.747507095336914,
-    "pythia": 4.659344673156738,
+    "EleutherAI/pythia-70m": 4.659344673156738,
     "gelu-2l": 6.501802444458008,
     "redwood_attn_2l": 10.530948638916016,
     "solu-1l": 5.256411552429199,
-    "tiny-stories-33M": 12.203617095947266,
-    "bloom-560m": 5.237126350402832,
+    "roneneldan/TinyStories-33M": 12.203617095947266,
+    "bigscience/bloom-560m": 5.237126350402832,
 }
 
-# Use full store if HF_TOKEN is available, otherwise use small store
+# Minimal store without HF_TOKEN
+SMALL_LOSS_STORE = {
+    "gpt2": 5.331855773925781,
+    "EleutherAI/pythia-70m": 4.659344673156738,
+}
+
 loss_store = FULL_LOSS_STORE if os.environ.get("HF_TOKEN", "") else SMALL_LOSS_STORE
 
 no_processing = [
@@ -116,20 +77,31 @@ no_processing = [
 ]
 
 
-@pytest.mark.parametrize("name,expected_loss", list(loss_store.items()))
-def test_model(name, expected_loss):
-    # Runs the model on short text and checks if the loss is as expected
-    model = HookedTransformer.from_pretrained(name)
+def _resolve_loss_key(model_name):
+    """Resolve a model name to its loss_store key."""
+    try:
+        official = get_official_model_name(model_name)
+    except ValueError:
+        official = model_name
+    return official
+
+
+@pytest.mark.needs_model(*loss_store.keys())
+def test_model(current_model_name):
+    """Runs the model on short text and checks if the loss is as expected."""
+    key = _resolve_loss_key(current_model_name)
+    if key not in loss_store:
+        pytest.skip(f"{current_model_name} not in loss_store")
+    expected_loss = loss_store[key]
+    model = HookedTransformer.from_pretrained(current_model_name)
     loss = model(text, return_type="loss")
     assert (loss.item() - expected_loss) < 4e-5
     del model
     gc.collect()
 
-    if "GITHUB_ACTIONS" in os.environ:
-        clear_huggingface_cache()
 
-
-def test_othello_gpt():
+@pytest.mark.needs_model("othello-gpt")
+def test_othello_gpt(current_model_name):
     # like test model but Othello GPT has a weird input format
     # so we need to test it separately
 
@@ -150,8 +122,15 @@ def test_othello_gpt():
     assert (loss.item() - expected_loss) < 4e-5
 
 
+@pytest.mark.needs_model("solu-1l", "redwood_attn_2l")
 @pytest.mark.parametrize("name,expected_loss", no_processing)
-def test_from_pretrained_no_processing(name, expected_loss):
+def test_from_pretrained_no_processing(name, expected_loss, current_model_name):
+    # Skip if current_model_name doesn't match the parametrized name
+    from tests.conftest import canonical_model_name
+
+    if canonical_model_name(name) != current_model_name:
+        pytest.skip(f"parametrized name {name} doesn't match {current_model_name}")
+
     # Checks if manually overriding the boolean flags in from_pretrained
     # is equivalent to using from_pretrained_no_processing
 
@@ -189,16 +168,18 @@ def test_from_pretrained_no_processing(name, expected_loss):
     assert (reff_loss.item() - expected_loss) < 4e-5
 
 
-def test_process_weights_inplace():
+@pytest.mark.needs_model("gpt2")
+def test_process_weights_inplace(current_model_name):
     """Check that process_weights_ works"""
     model = HookedTransformer.from_pretrained_no_processing("gpt2-small")
     model.process_weights_()
     loss = model.forward(text, return_type="loss")
-    assert (loss.item() - loss_store["gpt2-small"]) < 4e-5
+    assert (loss.item() - loss_store["gpt2"]) < 4e-5
     assert isinstance(model.ln_final, LayerNormPre)
 
 
-def test_from_pretrained_revision():
+@pytest.mark.needs_model("gpt2")
+def test_from_pretrained_revision(current_model_name):
     """
     Check that the from_pretrained parameter `revision` (= git version) works
     """
@@ -213,7 +194,8 @@ def test_from_pretrained_revision():
         raise AssertionError("Should have raised an error")
 
 
-def test_bloom_similarity_with_hf_model_with_kv_cache_activated():
+@pytest.mark.needs_model("bigscience/bloom-560m")
+def test_bloom_similarity_with_hf_model_with_kv_cache_activated(current_model_name):
     tf_model = HookedTransformer.from_pretrained(
         "bigscience/bloom-560m", default_prepend_bos=False, device="cpu"
     )
@@ -487,58 +469,71 @@ def check_performance(tl_model, hf_model, margin):
     assert tl_prob + margin > hf_prob
 
 
-def check_dtype(dtype, margin, no_processing=False):
-    """Check the loading and inferences for different dtypes."""
-    for model_path in ["gpt2", "roneneldan/TinyStories-33M", "EleutherAI/pythia-70m"]:
-        if no_processing:
-            # For low precision, the processing is not advised.
-            model = HookedTransformer.from_pretrained_no_processing(model_path, torch_dtype=dtype)
-        else:
-            model = HookedTransformer.from_pretrained(model_path, torch_dtype=dtype)
-
-        hf_model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=dtype,
-        ).to("cuda" if torch.cuda.is_available() else "cpu")
-
-        for layer_name, layer in model.state_dict().items():
-            assert layer.dtype in [dtype, torch.bool] or "IGNORE" in layer_name
-
-        check_performance(model, hf_model, margin)
-
-        # Check that generate doesn't throw an error
-        _ = model.generate("Hello, World!")
-
-        del model
-        del hf_model
-        gc.collect()
+# Models used in dtype tests
+_DTYPE_MODELS = ["gpt2", "roneneldan/TinyStories-33M", "EleutherAI/pythia-70m"]
 
 
+def check_dtype(dtype, margin, model_path, no_processing=False):
+    """Check the loading and inferences for a specific dtype and model."""
+    if no_processing:
+        # For low precision, the processing is not advised.
+        model = HookedTransformer.from_pretrained_no_processing(model_path, torch_dtype=dtype)
+    else:
+        model = HookedTransformer.from_pretrained(model_path, torch_dtype=dtype)
+
+    hf_model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        torch_dtype=dtype,
+    ).to("cuda" if torch.cuda.is_available() else "cpu")
+
+    for layer_name, layer in model.state_dict().items():
+        assert layer.dtype in [dtype, torch.bool] or "IGNORE" in layer_name
+
+    check_performance(model, hf_model, margin)
+
+    # Check that generate doesn't throw an error
+    _ = model.generate("Hello, World!")
+
+    del model
+    del hf_model
+    gc.collect()
+
+
+@pytest.mark.needs_model("gpt2", "roneneldan/TinyStories-33M", "EleutherAI/pythia-70m")
 @pytest.mark.skipif(
     torch.backends.mps.is_available() or not torch.cuda.is_available(),
     reason="some operations unsupported by MPS: https://github.com/pytorch/pytorch/issues/77754 or no GPU",
 )
 @pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
-def test_dtype_float(dtype):
-    check_dtype(dtype, margin=5e-4)
+def test_dtype_float(dtype, current_model_name):
+    # Only test the current model from the dtype model list
+    official = _resolve_loss_key(current_model_name)
+    if official not in _DTYPE_MODELS:
+        pytest.skip(f"{current_model_name} not a dtype test model")
+    check_dtype(dtype, margin=5e-4, model_path=official)
 
 
+@pytest.mark.needs_model("gpt2", "roneneldan/TinyStories-33M", "EleutherAI/pythia-70m")
 @pytest.mark.skipif(
     torch.backends.mps.is_available() or not torch.cuda.is_available(),
     reason="bfloat16 unsupported by MPS: https://github.com/pytorch/pytorch/issues/78168 or no GPU",
 )
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-def test_half_precision(dtype):
+def test_half_precision(dtype, current_model_name):
     """Check the 16 bits loading and inferences.
     Note that bfloat16 is generally preferred to float16 for ML due to numerical instabilities,
     and some float16 operations require having a GPU.
     bfloat16 can be used without GPU, but surprisingly it doesn't give the same results in this case.
     """
-    check_dtype(dtype, margin=0.05, no_processing=True)
+    official = _resolve_loss_key(current_model_name)
+    if official not in _DTYPE_MODELS:
+        pytest.skip(f"{current_model_name} not a dtype test model")
+    check_dtype(dtype, margin=0.05, model_path=official, no_processing=True)
 
 
+@pytest.mark.needs_model("gpt2")
 @torch.no_grad()
-def test_pos_embed_hook():
+def test_pos_embed_hook(current_model_name):
     """
     Checks that pos embed hooks:
     - do not permanently change the pos embed
@@ -593,6 +588,7 @@ def test_all_pythia_models_exist():
             )
 
 
+@pytest.mark.needs_model("gpt2")
 @pytest.mark.parametrize(
     "input_type,return_type",
     [
@@ -611,7 +607,7 @@ def test_all_pythia_models_exist():
     ],
 )
 def test_different_inputs_for_generation(
-    input_type, return_type, print_output=False, max_new_tokens=3
+    input_type, return_type, current_model_name, print_output=False, max_new_tokens=3
 ):
     from typing import List
 

@@ -4,6 +4,7 @@ from transformers import AutoTokenizer
 from transformer_lens import HookedTransformer
 
 
+@pytest.mark.needs_model("gpt2", "facebook/opt-125m")
 class TestPrependBos:
     prompt = "Hello world!"
 
@@ -30,20 +31,11 @@ class TestPrependBos:
         )
         assert logits.shape[1] == len(str_tokens) == tokens.shape[1] == expected_num_tokens
 
-    # fixtures
-    @pytest.fixture(scope="class", params=["gpt2", "facebook/opt-125m"])
-    def model_name(self, request):
-        return request.param
-
-    @pytest.fixture(scope="class")
-    def model(self, model_name):
-        return HookedTransformer.from_pretrained(model_name)
-
     # tests
-    def test_default_prepend_bos(self, model_name):
+    def test_default_prepend_bos(self, current_model_name):
         intended_prepend_bos = True
 
-        model = HookedTransformer.from_pretrained(model_name)
+        model = HookedTransformer.from_pretrained(current_model_name)
         assert (
             model.cfg.default_prepend_bos == intended_prepend_bos
         ), "Default prepend_bos should be True"
@@ -58,11 +50,11 @@ class TestPrependBos:
         bos_position = model.get_token_position(model.tokenizer.bos_token_id, self.prompt)
         assert bos_position == 0
 
-    def test_default_prepend_bos_to_false(self, model_name):
+    def test_default_prepend_bos_to_false(self, current_model_name):
         intended_prepend_bos = False
 
         model = HookedTransformer.from_pretrained(
-            model_name, default_prepend_bos=intended_prepend_bos
+            current_model_name, default_prepend_bos=intended_prepend_bos
         )
 
         logits = model(self.prompt)  # [batch pos d_vocab]
@@ -73,7 +65,8 @@ class TestPrependBos:
         self.check_tokens_length(model, logits, str_tokens, tokens, intended_prepend_bos)
 
     @pytest.mark.parametrize("intended_prepend_bos", [True, False])
-    def test_override_prepend_bos(self, model, intended_prepend_bos):
+    def test_override_prepend_bos(self, loaded_model, intended_prepend_bos):
+        model = loaded_model
         for default_prepend_bos in [True, False]:
             model.cfg.default_prepend_bos = default_prepend_bos
 
@@ -84,8 +77,8 @@ class TestPrependBos:
             self.check_first_token(model, str_tokens, tokens, intended_prepend_bos)
             self.check_tokens_length(model, logits, str_tokens, tokens, intended_prepend_bos)
 
-    def test_prepend_bos_with_get_token_position(self, model_name):
-        model = HookedTransformer.from_pretrained(model_name)
+    def test_prepend_bos_with_get_token_position(self, current_model_name):
+        model = HookedTransformer.from_pretrained(current_model_name)
 
         bos_position = model.get_token_position(model.tokenizer.bos_token_id, self.prompt)
         assert bos_position == 0
@@ -104,7 +97,8 @@ class TestPrependBos:
         )
         assert bos_position == 0
 
-    def test_same_tokenization(self, model):
+    def test_same_tokenization(self, loaded_model):
+        model = loaded_model
         prompt = self.prompt
         prompts = [
             "Italy is in Europe.",

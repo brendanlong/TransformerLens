@@ -12,32 +12,39 @@ from transformer_lens import HookedEncoder
 MODEL_NAME = "bert-base-cased"
 
 
-@pytest.fixture(scope="module")
-def our_bert():
+@pytest.fixture(scope="session")
+def our_bert(current_model_name):
+    if current_model_name != MODEL_NAME:
+        pytest.skip(f"bert fixtures only for {MODEL_NAME}")
     return HookedEncoder.from_pretrained(MODEL_NAME, device="cpu")
 
 
-@pytest.fixture(scope="module")
-def huggingface_bert():
+@pytest.fixture(scope="session")
+def huggingface_bert(current_model_name):
+    if current_model_name != MODEL_NAME:
+        pytest.skip(f"bert fixtures only for {MODEL_NAME}")
     return BertForPreTraining.from_pretrained(MODEL_NAME)
 
 
-@pytest.fixture(scope="module")
-def tokenizer():
+@pytest.fixture(scope="session")
+def bert_tokenizer(current_model_name):
+    if current_model_name != MODEL_NAME:
+        pytest.skip(f"bert fixtures only for {MODEL_NAME}")
     return AutoTokenizer.from_pretrained(MODEL_NAME)
 
 
 @pytest.fixture
-def tokens(tokenizer):
-    return tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
+def tokens(bert_tokenizer):
+    return bert_tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
 
 
-def test_full_model(our_bert, huggingface_bert, tokenizer):
+@pytest.mark.needs_model("bert-base-cased")
+def test_full_model(our_bert, huggingface_bert, bert_tokenizer):
     sequences = [
         "Hello, my [MASK] is Bert.",
         "I went to the [MASK] to buy some groceries.",
     ]
-    tokenized = tokenizer(sequences, return_tensors="pt", padding=True)
+    tokenized = bert_tokenizer(sequences, return_tensors="pt", padding=True)
     input_ids = tokenized["input_ids"]
     attention_mask = tokenized["attention_mask"]
 
@@ -48,6 +55,7 @@ def test_full_model(our_bert, huggingface_bert, tokenizer):
     assert_close(huggingface_bert_logits, our_bert_logits, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_embed_one_prediction(our_bert, huggingface_bert, tokens):
     huggingface_embed = huggingface_bert.bert.embeddings
     our_embed = our_bert.embed
@@ -57,8 +65,9 @@ def test_embed_one_prediction(our_bert, huggingface_bert, tokens):
     assert_close(huggingface_embed_out, our_embed_out)
 
 
-def test_embed_two_predictions(our_bert, huggingface_bert, tokenizer):
-    encoding = tokenizer(
+@pytest.mark.needs_model("bert-base-cased")
+def test_embed_two_predictions(our_bert, huggingface_bert, bert_tokenizer):
+    encoding = bert_tokenizer(
         "Hello, my [MASK] is Bert.",
         "I went to the [MASK] to buy some groceries.",
         return_tensors="pt",
@@ -73,6 +82,7 @@ def test_embed_two_predictions(our_bert, huggingface_bert, tokenizer):
     assert_close(huggingface_embed_out, our_embed_out)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_attention(our_bert, huggingface_bert, tokens):
     huggingface_embed = huggingface_bert.bert.embeddings
     huggingface_attn = huggingface_bert.bert.encoder.layer[0].attention
@@ -87,6 +97,7 @@ def test_attention(our_bert, huggingface_bert, tokens):
     assert_close(our_attn_out, huggingface_attn_out)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_bert_block(our_bert, huggingface_bert, tokens):
     huggingface_embed = huggingface_bert.bert.embeddings
     huggingface_block = huggingface_bert.bert.encoder.layer[0]
@@ -100,6 +111,7 @@ def test_bert_block(our_bert, huggingface_bert, tokens):
     assert_close(our_block_out, huggingface_block_out)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_bert_pooler(our_bert, huggingface_bert, tokens):
     huggingface_embed_out = huggingface_bert.bert.embeddings(tokens)
     huggingface_encoder_out = huggingface_bert.bert.encoder(huggingface_embed_out)
@@ -110,6 +122,7 @@ def test_bert_pooler(our_bert, huggingface_bert, tokens):
     assert_close(our_pooler_out, huggingface_pooler_out)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_nsp_head(our_bert, huggingface_bert, tokens):
     huggingface_bert_pooler_output = huggingface_bert.bert(tokens).pooler_output
     our_nsp_head_out = our_bert.nsp_head(huggingface_bert_pooler_output)
@@ -118,6 +131,7 @@ def test_nsp_head(our_bert, huggingface_bert, tokens):
     assert_close(our_nsp_head_out, huggingface_nsp_head_out)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_mlm_head(our_bert, huggingface_bert, tokens):
     huggingface_bert_core_outputs = huggingface_bert.bert(tokens).last_hidden_state
 
@@ -130,6 +144,7 @@ def test_mlm_head(our_bert, huggingface_bert, tokens):
     assert_close(our_mlm_head_out, huggingface_predictions_out, rtol=1.3e-3, atol=1e-5)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_unembed(our_bert, huggingface_bert, tokens):
     huggingface_bert_core_outputs = huggingface_bert.bert(tokens).last_hidden_state
 
@@ -140,6 +155,7 @@ def test_unembed(our_bert, huggingface_bert, tokens):
     assert_close(our_unembed_out, huggingface_predictions_out, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_run_with_cache(our_bert, tokens):
     _, cache = our_bert.run_with_cache(tokens)
 
@@ -151,6 +167,7 @@ def test_run_with_cache(our_bert, tokens):
     assert "mlm_head.ln.hook_normalized" in cache
 
 
+@pytest.mark.needs_model("bert-base-cased")
 def test_from_pretrained_revision():
     """
     Check that the from_pretrained parameter `revision` (= git version) works
@@ -166,6 +183,7 @@ def test_from_pretrained_revision():
         raise AssertionError("Should have raised an error")
 
 
+@pytest.mark.needs_model("bert-base-cased")
 @pytest.mark.skipif(
     torch.backends.mps.is_available() or not torch.cuda.is_available(),
     reason="bfloat16 unsupported by MPS: https://github.com/pytorch/pytorch/issues/78168 or no GPU",
@@ -187,33 +205,36 @@ def _get_predictions(
     return tokenizer.batch_decode(predicted_tokens)
 
 
-def test_predictions_mlm(our_bert, huggingface_bert, tokenizer):
-    input_ids = tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
+@pytest.mark.needs_model("bert-base-cased")
+def test_predictions_mlm(our_bert, huggingface_bert, bert_tokenizer):
+    input_ids = bert_tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
 
     our_bert_logits = our_bert(input_ids)
-    our_prediction = _get_predictions(our_bert_logits, [2], tokenizer)
+    our_prediction = _get_predictions(our_bert_logits, [2], bert_tokenizer)
 
     huggingface_bert_out = huggingface_bert(input_ids).prediction_logits
-    huggingface_prediction = _get_predictions(huggingface_bert_out, [2], tokenizer)
+    huggingface_prediction = _get_predictions(huggingface_bert_out, [2], bert_tokenizer)
 
     assert our_prediction == huggingface_prediction
 
 
-def test_predictions_from_forward_function_mlm(our_bert, huggingface_bert, tokenizer):
-    input_ids = tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
+@pytest.mark.needs_model("bert-base-cased")
+def test_predictions_from_forward_function_mlm(our_bert, huggingface_bert, bert_tokenizer):
+    input_ids = bert_tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
     our_prediction = our_bert(input_ids, return_type="predictions")
 
     huggingface_bert_out = huggingface_bert(input_ids).prediction_logits
-    huggingface_prediction = _get_predictions(huggingface_bert_out, [2], tokenizer)[
+    huggingface_prediction = _get_predictions(huggingface_bert_out, [2], bert_tokenizer)[
         0
     ]  # prediction is returned as a list
 
     assert our_prediction == huggingface_prediction
 
 
-def test_input_list_of_strings_mlm(our_bert, huggingface_bert, tokenizer):
+@pytest.mark.needs_model("bert-base-cased")
+def test_input_list_of_strings_mlm(our_bert, huggingface_bert, bert_tokenizer):
     prompts = ["The [MASK] sat on the mat", "She [MASK] to the store", "The dog [MASK] the ball"]
-    encodings = tokenizer(prompts, return_tensors="pt", truncation=True, padding=True)
+    encodings = bert_tokenizer(prompts, return_tensors="pt", truncation=True, padding=True)
     our_bert_logits = our_bert(prompts)
 
     huggingface_bert_logits = huggingface_bert(**encodings).prediction_logits
@@ -221,7 +242,9 @@ def test_input_list_of_strings_mlm(our_bert, huggingface_bert, tokenizer):
     assert_close(our_bert_logits, huggingface_bert_logits, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("bert-base-cased")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires a CUDA device")
-def test_cuda(mlm_tokens):
+def test_cuda(bert_tokenizer):
+    mlm_tokens = bert_tokenizer("The [MASK] sat on the mat", return_tensors="pt")["input_ids"]
     model = HookedEncoder.from_pretrained(MODEL_NAME)
     model(mlm_tokens)
