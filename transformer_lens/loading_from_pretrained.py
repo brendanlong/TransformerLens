@@ -19,6 +19,7 @@ from transformers import (
     AutoModelForCausalLM,
     BertForPreTraining,
     HubertModel,
+    LlamaConfig,
     T5ForConditionalGeneration,
     Wav2Vec2Model,
 )
@@ -825,6 +826,252 @@ def get_official_model_name(model_name: str):
     return official_model_name
 
 
+# ============================================================================
+# HF config cache
+#
+# Cached HF config objects for models that are gated or otherwise
+# problematic to fetch via AutoConfig.from_pretrained(). This lets us
+# use the generic architecture handlers without requiring an HF token.
+#
+# max_position_embeddings is capped to a memory-safe value where needed,
+# since the generic handlers use it directly as n_ctx.
+# ============================================================================
+
+_HF_CONFIG_CACHE: dict[str, LlamaConfig] = {
+    # --- LLaMA 1 ---
+    "llama-7b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=4096,
+        num_attention_heads=32,
+        intermediate_size=11008,
+        num_hidden_layers=32,
+        max_position_embeddings=2048,
+        rms_norm_eps=1e-6,
+        vocab_size=32000,
+    ),
+    "llama-13b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=5120,
+        num_attention_heads=40,
+        intermediate_size=13824,
+        num_hidden_layers=40,
+        max_position_embeddings=2048,
+        rms_norm_eps=1e-6,
+        vocab_size=32000,
+    ),
+    "llama-30b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=6656,
+        num_attention_heads=52,
+        intermediate_size=17920,
+        num_hidden_layers=60,
+        max_position_embeddings=2048,
+        rms_norm_eps=1e-6,
+        vocab_size=32000,
+    ),
+    "llama-65b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=8192,
+        num_attention_heads=64,
+        intermediate_size=22016,
+        num_hidden_layers=80,
+        max_position_embeddings=2048,
+        rms_norm_eps=1e-6,
+        vocab_size=32000,
+    ),
+    # --- LLaMA 2 ---
+    "meta-llama/Llama-2-7b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=4096,
+        num_attention_heads=32,
+        intermediate_size=11008,
+        num_hidden_layers=32,
+        max_position_embeddings=4096,
+        rms_norm_eps=1e-5,
+        vocab_size=32000,
+    ),
+    "meta-llama/Llama-2-13b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=5120,
+        num_attention_heads=40,
+        intermediate_size=13824,
+        num_hidden_layers=40,
+        max_position_embeddings=4096,
+        rms_norm_eps=1e-5,
+        vocab_size=32000,
+    ),
+    "meta-llama/Llama-2-70b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=8192,
+        num_attention_heads=64,
+        num_key_value_heads=8,
+        intermediate_size=28672,
+        num_hidden_layers=80,
+        max_position_embeddings=4096,
+        rms_norm_eps=1e-5,
+        vocab_size=32000,
+    ),
+    # --- CodeLlama ---
+    "codellama/CodeLlama-7b": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=4096,
+        num_attention_heads=32,
+        intermediate_size=11008,
+        num_hidden_layers=32,
+        max_position_embeddings=4096,
+        rms_norm_eps=1e-5,
+        vocab_size=32016,
+        rope_theta=1000000,
+    ),
+    "codellama/CodeLlama-7b-Python": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=4096,
+        num_attention_heads=32,
+        intermediate_size=11008,
+        num_hidden_layers=32,
+        max_position_embeddings=4096,
+        rms_norm_eps=1e-5,
+        vocab_size=32000,
+        rope_theta=1000000,
+    ),
+    # --- Meta-Llama-3 ---
+    "meta-llama/Meta-Llama-3-8B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=4096,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        intermediate_size=14336,
+        num_hidden_layers=32,
+        max_position_embeddings=8192,
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+    ),
+    "meta-llama/Meta-Llama-3-70B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=8192,
+        num_attention_heads=64,
+        num_key_value_heads=8,
+        intermediate_size=28672,
+        num_hidden_layers=80,
+        max_position_embeddings=8192,
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+    ),
+    # --- Llama-3.1 (n_ctx capped to 2048) ---
+    "meta-llama/Llama-3.1-8B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=4096,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        intermediate_size=14336,
+        num_hidden_layers=32,
+        max_position_embeddings=2048,  # capped from 131072
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+        rope_scaling={
+            "rope_type": "llama3",
+            "factor": 8.0,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "original_max_position_embeddings": 8192,
+        },
+    ),
+    "meta-llama/Llama-3.1-70B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=8192,
+        num_attention_heads=64,
+        num_key_value_heads=8,
+        intermediate_size=28672,
+        num_hidden_layers=80,
+        max_position_embeddings=2048,  # capped from 131072
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+        rope_scaling={
+            "rope_type": "llama3",
+            "factor": 8.0,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "original_max_position_embeddings": 8192,
+        },
+    ),
+    # --- Llama-3.2 (n_ctx capped to 2048) ---
+    "meta-llama/Llama-3.2-1B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=2048,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        intermediate_size=8192,
+        num_hidden_layers=16,
+        max_position_embeddings=2048,  # capped from 131072
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+        rope_scaling={
+            "rope_type": "llama3",
+            "factor": 32.0,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "original_max_position_embeddings": 8192,
+        },
+    ),
+    "meta-llama/Llama-3.2-3B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=3072,
+        num_attention_heads=24,
+        num_key_value_heads=8,
+        intermediate_size=8192,
+        num_hidden_layers=28,
+        max_position_embeddings=2048,  # capped from 131072
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+        rope_scaling={
+            "rope_type": "llama3",
+            "factor": 32.0,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "original_max_position_embeddings": 8192,
+        },
+    ),
+    # --- Llama-3.3 (n_ctx capped to 2048) ---
+    "meta-llama/Llama-3.3-70B": LlamaConfig(
+        architectures=["LlamaForCausalLM"],
+        hidden_size=8192,
+        num_attention_heads=64,
+        num_key_value_heads=8,
+        intermediate_size=28672,
+        num_hidden_layers=80,
+        max_position_embeddings=2048,  # capped from 131072
+        rms_norm_eps=1e-5,
+        vocab_size=128256,
+        rope_theta=500000.0,
+        rope_scaling={
+            "rope_type": "llama3",
+            "factor": 8.0,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "original_max_position_embeddings": 8192,
+        },
+    ),
+}
+
+
+def _get_hf_config(official_model_name: str) -> Optional[LlamaConfig]:
+    """Look up a cached HF config for a known model.
+
+    Matches by longest prefix: e.g. "meta-llama/Llama-3.1-8B-Instruct" matches
+    the "meta-llama/Llama-3.1-8B" entry. Returns None if no cache entry matches.
+    """
+    for prefix in sorted(_HF_CONFIG_CACHE, key=len, reverse=True):
+        if official_model_name.startswith(prefix):
+            return _HF_CONFIG_CACHE[prefix]
+    return None
+
+
 def convert_hf_model_config(model_name: str, **kwargs: Any):
     """
     Returns the model config for a HuggingFace model, converted to a dictionary
@@ -840,8 +1087,10 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
         official_model_name = get_official_model_name(model_name)
 
     # Load HuggingFace model config
-    if "llama" in official_model_name.lower():
-        architecture = "LlamaForCausalLM"
+    # Check cache first (for gated models that would need an HF token)
+    hf_config = _get_hf_config(official_model_name)
+    if hf_config is not None:
+        architecture = hf_config.architectures[0]
     elif "gemma-3" in official_model_name.lower() or "medgemma" in official_model_name.lower():
         # Gemma 3: 270M and 1B are text-only (CausalLM), 4B+ are multimodal (ConditionalGeneration)
         # Exception: medgemma-27b-text-it is text-only
@@ -867,289 +1116,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
         architecture = hf_config.architectures[0]
 
     cfg_dict: dict[str, Any]
-    if official_model_name.startswith(
-        ("llama-7b", "meta-llama/Llama-2-7b")
-    ):  # same architecture for LLaMA and Llama-2
-        cfg_dict = {
-            "d_model": 4096,
-            "d_head": 4096 // 32,
-            "n_heads": 32,
-            "d_mlp": 11008,
-            "n_layers": 32,
-            "n_ctx": 2048 if official_model_name.startswith("llama-7b") else 4096,
-            "eps": 1e-6 if official_model_name.startswith("llama-7b") else 1e-5,
-            "d_vocab": 32000,
-            "act_fn": "silu",
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 4096 // 32,
-            "final_rms": True,
-            "gated_mlp": True,
-        }
-    elif official_model_name.startswith("codellama"):  # same architecture CodeLlama and Llama-2
-        cfg_dict = {
-            "d_model": 4096,
-            "d_head": 4096 // 32,
-            "n_heads": 32,
-            "d_mlp": 11008,
-            "n_layers": 32,
-            "n_ctx": 4096,
-            "eps": 1e-5,
-            "d_vocab": 32016,
-            "act_fn": "silu",
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 4096 // 32,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 1000000,
-        }
-        if "python" in official_model_name.lower():
-            # The vocab size of python version of CodeLlama-7b is 32000
-            cfg_dict["d_vocab"] = 32000
-    elif official_model_name.startswith(
-        ("llama-13b", "meta-llama/Llama-2-13b")
-    ):  # same architecture for LLaMA and Llama-2
-        cfg_dict = {
-            "d_model": 5120,
-            "d_head": 5120 // 40,
-            "n_heads": 40,
-            "d_mlp": 13824,
-            "n_layers": 40,
-            "n_ctx": 2048 if official_model_name.startswith("llama-13b") else 4096,
-            "eps": 1e-6 if official_model_name.startswith("llama-13b") else 1e-5,
-            "d_vocab": 32000,
-            "act_fn": "silu",
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 5120 // 40,
-            "final_rms": True,
-            "gated_mlp": True,
-        }
-    elif "llama-30b" in official_model_name:
-        cfg_dict = {
-            "d_model": 6656,
-            "d_head": 6656 // 52,
-            "n_heads": 52,
-            "d_mlp": 17920,
-            "n_layers": 60,
-            "n_ctx": 2048,
-            "eps": 1e-6,
-            "d_vocab": 32000,
-            "act_fn": "silu",
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 6656 // 52,
-            "final_rms": True,
-            "gated_mlp": True,
-        }
-    elif "llama-65b" in official_model_name:
-        cfg_dict = {
-            "d_model": 8192,
-            "d_head": 8192 // 64,
-            "n_heads": 64,
-            "d_mlp": 22016,
-            "n_layers": 80,
-            "n_ctx": 2048,
-            "eps": 1e-6,
-            "d_vocab": 32000,
-            "act_fn": "silu",
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_dim": 8192 // 64,
-            "rotary_adjacent_pairs": False,
-            "final_rms": True,
-            "gated_mlp": True,
-        }
-    elif "Llama-2-70b" in official_model_name:
-        cfg_dict = {
-            "d_model": 8192,
-            "d_head": 128,
-            "n_heads": 64,
-            "d_mlp": 28672,
-            "n_layers": 80,
-            "n_ctx": 4096,
-            "eps": 1e-5,
-            "d_vocab": 32000,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-        }
-    elif "Meta-Llama-3-8B" in official_model_name:
-        cfg_dict = {
-            "d_model": 4096,
-            "d_head": 128,
-            "n_heads": 32,
-            "d_mlp": 14336,
-            "n_layers": 32,
-            "n_ctx": 8192,
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-        }
-    elif "Meta-Llama-3-70B" in official_model_name:
-        cfg_dict = {
-            "d_model": 8192,
-            "d_head": 128,
-            "n_heads": 64,
-            "d_mlp": 28672,
-            "n_layers": 80,
-            "n_ctx": 8192,
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-        }
-    elif "Llama-3.2-1B" in official_model_name:
-        cfg_dict = {
-            "d_model": 2048,
-            "d_head": 64,
-            "n_heads": 32,
-            "d_mlp": 8192,
-            "n_layers": 16,
-            "n_ctx": 2048,  # capped due to memory issues
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 64,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-            "use_NTK_by_parts_rope": True,
-            "NTK_by_parts_low_freq_factor": 1.0,
-            "NTK_by_parts_high_freq_factor": 4.0,
-            "NTK_by_parts_factor": 32.0,
-            "NTK_original_ctx_len": 8192,
-        }
-    elif "Llama-3.2-3B" in official_model_name:
-        cfg_dict = {
-            "d_model": 3072,
-            "d_head": 128,
-            "n_heads": 24,
-            "d_mlp": 8192,
-            "n_layers": 28,
-            "n_ctx": 2048,  # capped due to memory issues
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-            "use_NTK_by_parts_rope": True,
-            "NTK_by_parts_low_freq_factor": 1.0,
-            "NTK_by_parts_high_freq_factor": 4.0,
-            "NTK_by_parts_factor": 32.0,
-            "NTK_original_ctx_len": 8192,
-        }
-    elif "Llama-3.3-70B" in official_model_name:
-        cfg_dict = {
-            "d_model": 8192,
-            "d_head": 128,
-            "n_heads": 64,
-            "d_mlp": 28672,
-            "n_layers": 80,
-            "n_ctx": 2048,  # capped due to memory issues
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-            "use_NTK_by_parts_rope": True,
-            "NTK_by_parts_low_freq_factor": 1.0,
-            "NTK_by_parts_high_freq_factor": 4.0,
-            "NTK_by_parts_factor": 8.0,
-            "NTK_original_ctx_len": 8192,
-        }
-    elif "Llama-3.1-8B" in official_model_name:
-        cfg_dict = {
-            "d_model": 4096,
-            "d_head": 128,
-            "n_heads": 32,
-            "d_mlp": 14336,
-            "n_layers": 32,
-            "n_ctx": 2048,  # capped due to memory issues
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-            "use_NTK_by_parts_rope": True,
-            "NTK_by_parts_low_freq_factor": 1.0,
-            "NTK_by_parts_high_freq_factor": 4.0,
-            "NTK_by_parts_factor": 8.0,
-            "NTK_original_ctx_len": 8192,
-        }
-    elif "Llama-3.1-70B" in official_model_name:
-        cfg_dict = {
-            "d_model": 8192,
-            "d_head": 128,
-            "n_heads": 64,
-            "d_mlp": 28672,
-            "n_layers": 80,
-            "n_ctx": 2048,  # capped due to memory issues
-            "eps": 1e-5,
-            "d_vocab": 128256,
-            "act_fn": "silu",
-            "n_key_value_heads": 8,
-            "normalization_type": "RMS",
-            "positional_embedding_type": "rotary",
-            "rotary_adjacent_pairs": False,
-            "rotary_dim": 128,
-            "final_rms": True,
-            "gated_mlp": True,
-            "rotary_base": 500000.0,
-            "use_NTK_by_parts_rope": True,
-            "NTK_by_parts_low_freq_factor": 1.0,
-            "NTK_by_parts_high_freq_factor": 4.0,
-            "NTK_by_parts_factor": 8.0,
-            "NTK_original_ctx_len": 8192,
-        }
-    elif architecture == "GPTNeoForCausalLM":
+    if architecture == "GPTNeoForCausalLM":
         cfg_dict = {
             "d_model": hf_config.hidden_size,
             "d_head": hf_config.hidden_size // hf_config.num_heads,
@@ -1435,6 +1402,22 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "final_rms": True,
             "gated_mlp": True,
         }
+        rope_theta = getattr(hf_config, "rope_theta", None)
+        if rope_theta is not None and rope_theta != 10000:
+            cfg_dict["rotary_base"] = rope_theta
+        rope_scaling = getattr(hf_config, "rope_scaling", None)
+        if rope_scaling:
+            rope_type = (rope_scaling.get("type") or rope_scaling.get("rope_type") or "").lower()
+            if rope_type == "llama3":
+                cfg_dict["use_NTK_by_parts_rope"] = True
+                cfg_dict["NTK_original_ctx_len"] = rope_scaling.get(
+                    "original_max_position_embeddings", hf_config.max_position_embeddings
+                )
+                cfg_dict["NTK_by_parts_low_freq_factor"] = rope_scaling.get("low_freq_factor", 1.0)
+                cfg_dict["NTK_by_parts_high_freq_factor"] = rope_scaling.get(
+                    "high_freq_factor", 4.0
+                )
+                cfg_dict["NTK_by_parts_factor"] = rope_scaling.get("factor", 1.0)
     elif architecture == "QWenLMHeadModel":
         cfg_dict = {
             "d_model": hf_config.hidden_size,
