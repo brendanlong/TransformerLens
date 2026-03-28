@@ -9,35 +9,42 @@ from transformer_lens import HookedEncoderDecoder
 MODEL_NAME = "t5-small"
 
 
-@pytest.fixture(scope="module")
-def our_model():
+@pytest.fixture(scope="session")
+def our_model(current_model_name):
+    if current_model_name != MODEL_NAME:
+        pytest.skip(f"t5 fixtures only for {MODEL_NAME}")
     return HookedEncoderDecoder.from_pretrained(MODEL_NAME, device="cpu")
 
 
-@pytest.fixture(scope="module")
-def huggingface_model():
+@pytest.fixture(scope="session")
+def huggingface_model(current_model_name):
+    if current_model_name != MODEL_NAME:
+        pytest.skip(f"t5 fixtures only for {MODEL_NAME}")
     return T5ForConditionalGeneration.from_pretrained(MODEL_NAME).eval()
 
 
-@pytest.fixture(scope="module")
-def tokenizer():
+@pytest.fixture(scope="session")
+def t5_tokenizer(current_model_name):
+    if current_model_name != MODEL_NAME:
+        pytest.skip(f"t5 fixtures only for {MODEL_NAME}")
     return AutoTokenizer.from_pretrained(MODEL_NAME)
 
 
 @pytest.fixture
-def hello_world_tokens(tokenizer):
-    return tokenizer("Hello, world!", return_tensors="pt")["input_ids"]
+def hello_world_tokens(t5_tokenizer):
+    return t5_tokenizer("Hello, world!", return_tensors="pt")["input_ids"]
 
 
 @pytest.fixture
-def decoder_input_ids(tokenizer):
-    return torch.LongTensor([[tokenizer.pad_token_id]])
+def decoder_input_ids(t5_tokenizer):
+    return torch.LongTensor([[t5_tokenizer.pad_token_id]])
 
 
-def test_full_model(our_model, huggingface_model, tokenizer, decoder_input_ids):
+@pytest.mark.needs_model("t5-small")
+def test_full_model(our_model, huggingface_model, t5_tokenizer, decoder_input_ids):
     sequences = ["Hello, world!", "this is another sequence of tokens"]
 
-    tokenized = tokenizer(sequences, return_tensors="pt", padding=True)
+    tokenized = t5_tokenizer(sequences, return_tensors="pt", padding=True)
     decoder_ids = torch.stack([decoder_input_ids[0]] * len(sequences), dim=0)
     input_ids = tokenized["input_ids"]
 
@@ -56,6 +63,7 @@ def test_full_model(our_model, huggingface_model, tokenizer, decoder_input_ids):
     assert_close(huggingface_model_out, our_model_out, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_encoder(our_model, huggingface_model, hello_world_tokens):
     our_embeds = our_model.embed(hello_world_tokens)
     pos_bias = our_model.encoder[0].attn.compute_relative_attention_bias(
@@ -72,6 +80,7 @@ def test_encoder(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_encoder_out, huggingface_encoder_out, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_decoder(our_model, huggingface_model, hello_world_tokens, decoder_input_ids):
     encoder_hidden = huggingface_model.encoder(hello_world_tokens)[0]
 
@@ -90,6 +99,7 @@ def test_decoder(our_model, huggingface_model, hello_world_tokens, decoder_input
     assert_close(our_decoder_out, hf_decoder_out, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_embed_one_sentence(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.encoder.embed_tokens
     our_embed = our_model.embed
@@ -99,6 +109,7 @@ def test_embed_one_sentence(our_model, huggingface_model, hello_world_tokens):
     assert_close(huggingface_embed_out, our_embed_out)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_relative_attention_bias(our_model, huggingface_model, hello_world_tokens):
     # it is used only in self attention of first layer of encoder
     huggingface_embed = huggingface_model.encoder.embed_tokens
@@ -129,6 +140,7 @@ def test_relative_attention_bias(our_model, huggingface_model, hello_world_token
     assert_close(our_attn_out, huggingface_attn_out, rtol=7.4e-4, atol=1e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_relative_attention_layer(our_model, huggingface_model, hello_world_tokens):
     # it is used only in self attention of first layer of encoder
     hf_block = huggingface_model.encoder.block[0].layer[0]
@@ -145,6 +157,7 @@ def test_relative_attention_layer(our_model, huggingface_model, hello_world_toke
     assert_close(our_out, hf_out, rtol=1.3e-6, atol=4e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_attention(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.encoder.embed_tokens
     huggingface_attn = huggingface_model.encoder.block[1].layer[0].SelfAttention
@@ -161,6 +174,7 @@ def test_attention(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_attn_out, huggingface_attn_out, rtol=5e-4, atol=1e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_decoder_attention(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.decoder.embed_tokens
     huggingface_attn = huggingface_model.decoder.block[1].layer[0].SelfAttention
@@ -176,6 +190,7 @@ def test_decoder_attention(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_attn_out, huggingface_attn_out, rtol=5e-4, atol=1e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_attention_layer(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.encoder.embed_tokens
     huggingface_attn = huggingface_model.encoder.block[1].layer[0]
@@ -191,6 +206,7 @@ def test_attention_layer(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_attn_out, huggingface_attn_out, rtol=2e-4, atol=1e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_decoder_attention_layer(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.decoder.embed_tokens
     huggingface_attn = huggingface_model.decoder.block[1].layer[0]
@@ -206,6 +222,7 @@ def test_decoder_attention_layer(our_model, huggingface_model, hello_world_token
     assert_close(our_attn_out, huggingface_attn_out, rtol=3e-4, atol=4e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_cross_attention(our_model, huggingface_model, hello_world_tokens, decoder_input_ids):
     encoder_hidden = huggingface_model.encoder(hello_world_tokens).last_hidden_state
     decoder_hidden = huggingface_model.decoder.embed_tokens(decoder_input_ids)
@@ -220,6 +237,7 @@ def test_cross_attention(our_model, huggingface_model, hello_world_tokens, decod
     assert_close(our_cross_attn_out, huggingface_cross_attn_out, rtol=2e-3, atol=1e-4)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_cross_attention_layer(our_model, huggingface_model, hello_world_tokens, decoder_input_ids):
     encoder_hidden = huggingface_model.encoder(hello_world_tokens).last_hidden_state
     decoder_hidden = huggingface_model.decoder.embed_tokens(decoder_input_ids)
@@ -239,6 +257,7 @@ def test_cross_attention_layer(our_model, huggingface_model, hello_world_tokens,
     assert_close(our_cross_attn_out, huggingface_cross_attn_out, rtol=2e-4, atol=1e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_encoder_block(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.encoder.embed_tokens
     huggingface_block = huggingface_model.encoder.block[1]
@@ -254,6 +273,7 @@ def test_encoder_block(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_out, hf_out, rtol=2e-4, atol=2e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_decoder_block(our_model, huggingface_model, hello_world_tokens, decoder_input_ids):
     huggingface_embed = huggingface_model.decoder.embed_tokens
     huggingface_block = huggingface_model.decoder.block[1]
@@ -275,6 +295,7 @@ def test_decoder_block(our_model, huggingface_model, hello_world_tokens, decoder
     assert_close(hf_out, our_out, rtol=2e-4, atol=2e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_layernorm(our_model, huggingface_model, hello_world_tokens):
     huggingface_embed = huggingface_model.encoder.embed_tokens
     huggingface_layernorm = huggingface_model.encoder.block[0].layer[0].layer_norm
@@ -287,6 +308,7 @@ def test_layernorm(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_layernorm_out, huggingface_layernorm_out)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_unembed(our_model, huggingface_model, hello_world_tokens):
     huggingface_model_hidden = huggingface_model.decoder(hello_world_tokens).last_hidden_state
 
@@ -296,6 +318,7 @@ def test_unembed(our_model, huggingface_model, hello_world_tokens):
     assert_close(our_model_logits, huggingface_model_logits, rtol=1.3e-3, atol=1e-5)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_run_with_cache(our_model, hello_world_tokens, decoder_input_ids):
     logits, cache = our_model.run_with_cache(hello_world_tokens, decoder_input=decoder_input_ids)
 
@@ -319,6 +342,7 @@ def test_run_with_cache(our_model, hello_world_tokens, decoder_input_ids):
     assert cache["decoder.3.hook_resid_post"].shape == (1, generated_len, 512)
 
 
+@pytest.mark.needs_model("t5-small")
 def test_from_pretrained_revision():
     """
     Check that the from_pretrained parameter `revision` (= git version) works
@@ -334,14 +358,15 @@ def test_from_pretrained_revision():
         raise AssertionError("Should have raised an error")
 
 
-def test_predictions(our_model, huggingface_model, tokenizer, decoder_input_ids):
-    input_ids = tokenizer("My name is Wolfgang and I live in Berlin", return_tensors="pt")[
+@pytest.mark.needs_model("t5-small")
+def test_predictions(our_model, huggingface_model, t5_tokenizer, decoder_input_ids):
+    input_ids = t5_tokenizer("My name is Wolfgang and I live in Berlin", return_tensors="pt")[
         "input_ids"
     ]
 
     def get_predictions(logits: Float[torch.Tensor, "batch pos d_vocab"]):
         predicted_tokens = logits[0].argmax(dim=-1)
-        return tokenizer.batch_decode(predicted_tokens)
+        return t5_tokenizer.batch_decode(predicted_tokens)
 
     our_model_logits = our_model(input_ids, decoder_input=decoder_input_ids)
     our_prediction = get_predictions(our_model_logits)
@@ -354,13 +379,14 @@ def test_predictions(our_model, huggingface_model, tokenizer, decoder_input_ids)
     assert our_prediction == huggingface_prediction
 
 
-def test_predictions_string_input(our_model, huggingface_model, tokenizer):
+@pytest.mark.needs_model("t5-small")
+def test_predictions_string_input(our_model, huggingface_model, t5_tokenizer):
     prompt = "translate English to German: Hello, do you like bananas?"
 
-    encodings = tokenizer(prompt, return_tensors="pt")
+    encodings = t5_tokenizer(prompt, return_tensors="pt")
     tokens = encodings.input_ids
     batch_size, seq_len = tokens.shape
-    decoder_input_ids = torch.full((batch_size, 1), tokenizer.pad_token_id)
+    decoder_input_ids = torch.full((batch_size, 1), t5_tokenizer.pad_token_id)
 
     our_model_logits = our_model(prompt)
 
@@ -373,17 +399,18 @@ def test_predictions_string_input(our_model, huggingface_model, tokenizer):
     assert_close(our_model_logits, huggingface_model_logits, rtol=1e-5, atol=1e-5)
 
 
-def test_predictions_string_list_input(our_model, huggingface_model, tokenizer):
+@pytest.mark.needs_model("t5-small")
+def test_predictions_string_list_input(our_model, huggingface_model, t5_tokenizer):
     prompt = [
         "translate English to German: Hello, do you like bananas?",
         "translate English to French: Hello, do you like bananas?",
         "translate English to Spanish: Hello, do you like bananas?",
     ]
 
-    encodings = tokenizer(prompt, return_tensors="pt")
+    encodings = t5_tokenizer(prompt, return_tensors="pt")
     tokens = encodings.input_ids
     batch_size, seq_len = tokens.shape
-    decoder_input_ids = torch.full((batch_size, 1), tokenizer.pad_token_id)
+    decoder_input_ids = torch.full((batch_size, 1), t5_tokenizer.pad_token_id)
 
     our_model_logits = our_model(prompt)
 
@@ -396,10 +423,11 @@ def test_predictions_string_list_input(our_model, huggingface_model, tokenizer):
     assert_close(our_model_logits, huggingface_model_logits, rtol=1e-5, atol=1e-5)
 
 
-def test_generate(our_model, huggingface_model, tokenizer):
+@pytest.mark.needs_model("t5-small")
+def test_generate(our_model, huggingface_model, t5_tokenizer):
     prompt = "translate English to German: Hello, do you like bananas?"
 
-    encodings = tokenizer(prompt, return_tensors="pt")
+    encodings = t5_tokenizer(prompt, return_tensors="pt")
 
     our_generation = our_model.generate(prompt, do_sample=False, max_new_tokens=20)
     huggingface_generated_tokens = huggingface_model.generate(
@@ -408,13 +436,14 @@ def test_generate(our_model, huggingface_model, tokenizer):
         do_sample=False,
     )[0]
 
-    huggingface_generation = tokenizer.decode(
+    huggingface_generation = t5_tokenizer.decode(
         huggingface_generated_tokens, skip_special_tokens=True
     )
 
     assert our_generation.lower() == huggingface_generation.lower()
 
 
+@pytest.mark.needs_model("t5-small")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires a CUDA device")
 def test_cuda(hello_world_tokens, decoder_input_ids):
     model = HookedEncoderDecoder.from_pretrained(MODEL_NAME)
