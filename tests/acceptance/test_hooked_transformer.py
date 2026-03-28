@@ -14,6 +14,8 @@ from transformer_lens.loading_from_pretrained import (
     get_official_model_name,
 )
 
+from tests.conftest import canonical_model_name
+
 TINY_STORIES_MODEL_NAMES = [
     name for name in OFFICIAL_MODEL_NAMES if name.startswith("roneneldan/TinyStories")
 ]
@@ -126,8 +128,6 @@ def test_othello_gpt(current_model_name):
 @pytest.mark.parametrize("name,expected_loss", no_processing)
 def test_from_pretrained_no_processing(name, expected_loss, current_model_name):
     # Skip if current_model_name doesn't match the parametrized name
-    from tests.conftest import canonical_model_name
-
     if canonical_model_name(name) != current_model_name:
         pytest.skip(f"parametrized name {name} doesn't match {current_model_name}")
 

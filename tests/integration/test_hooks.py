@@ -274,8 +274,7 @@ def test_prepending_hooks(zero_attach_pos, prepend):
 
 
 @pytest.mark.needs_model("Qwen/Qwen2-0.5B")
-def test_use_attn_in_with_gqa_raises_error(current_model_name):
-    # Create model that uses GroupedQueryAttention
-    qwen_model = HookedTransformer.from_pretrained("Qwen/Qwen2-0.5B")
+def test_use_attn_in_with_gqa_raises_error(loaded_model):
+    # loaded_model is a Qwen model (uses GroupedQueryAttention) due to needs_model marker
     with pytest.raises(AssertionError):
-        qwen_model.set_use_attn_in(True)
+        loaded_model.set_use_attn_in(True)
