@@ -854,16 +854,32 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
     else:
         official_model_name = get_official_model_name(model_name)
 
-    # Load HuggingFace model config
-    huggingface_token = os.environ.get("HF_TOKEN", "")
-    hf_config = AutoConfig.from_pretrained(
-        official_model_name,
-        token=huggingface_token if len(huggingface_token) > 0 else None,
-        **kwargs,
-    )
+    # Load HuggingFace model config lazily — some models (e.g. gated Llama, Gemma)
+    # have hardcoded configs so users don't need an HF token. We only fetch from
+    # HuggingFace when the config is actually accessed.
+    class _LazyHfConfig:
+        """Delays AutoConfig.from_pretrained() until an attribute is first accessed."""
 
-    # Determine architecture: override by name for models where AutoConfig
-    # doesn't return the right architecture, otherwise use HF config.
+        def __init__(self):
+            self._config = None
+
+        def _load(self):
+            if self._config is None:
+                huggingface_token = os.environ.get("HF_TOKEN", "")
+                self._config = AutoConfig.from_pretrained(
+                    official_model_name,
+                    token=huggingface_token if len(huggingface_token) > 0 else None,
+                    **kwargs,
+                )
+            return self._config
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            return getattr(self._load(), name)
+
+    hf_config = _LazyHfConfig()
+
     if "llama" in official_model_name.lower():
         architecture = "LlamaForCausalLM"
     elif "gemma-3" in official_model_name.lower() or "medgemma" in official_model_name.lower():
