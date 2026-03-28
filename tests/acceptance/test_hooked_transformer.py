@@ -40,7 +40,6 @@ PUBLIC_MODEL_NAMES = [
     "tiny-stories-33M",
     "microsoft/phi-1",
     "google/gemma-2b",
-    "deepseek-r1-distill-qwen-1.5b",
 ]
 
 # Full set of models to test
@@ -89,7 +88,6 @@ print(store)
 SMALL_LOSS_STORE = {
     "gpt2-small": 5.331855773925781,
     "pythia-70m": 4.659344673156738,
-    "deepseek-r1-distill-qwen-1.5b": 6.710656642913818,
 }
 
 # Full set of loss values
