@@ -14,16 +14,19 @@ Architecture families not covered here due to model size (smallest variant >2B):
 - Mistral (mistral.py) - smallest is mistralai/Mistral-7B-v0.1 (7B)
 - Mixtral (mixtral.py) - smallest is mistralai/Mixtral-8x7B-v0.1 (47B)
 - Phi-3 (phi3.py) - smallest is microsoft/Phi-3-mini-4k-instruct (3.8B)
-- Llama (llama.py) - smallest public is meta-llama/Llama-3.2-1B (1B, gated)
+
+Gated models (require accepting license terms on HuggingFace) are included but
+automatically skipped if access is denied.
 """
 
 import gc
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import pytest
 import torch
+from huggingface_hub.errors import GatedRepoError
 from transformers import AutoModelForCausalLM
 
 from transformer_lens import HookedTransformer
@@ -40,12 +43,14 @@ DEFAULT_MODELS = [
 ]
 
 # Additional models for full architecture coverage (require HF_TOKEN).
+# Gated models (e.g. Llama) are included but automatically skipped if access is denied.
 EXTENDED_MODELS = DEFAULT_MODELS + [
     ("EleutherAI/gpt-neo-125M", "GPTNeoForCausalLM"),
     ("microsoft/phi-1", "PhiForCausalLM"),
     ("google/gemma-2b", "GemmaForCausalLM"),
     ("google/gemma-3-270m", "Gemma3ForCausalLM"),
     ("Qwen/Qwen3-0.6B", "Qwen3ForCausalLM"),
+    ("meta-llama/Llama-3.2-1B", "LlamaForCausalLM"),
 ]
 
 MODELS_TO_TEST = EXTENDED_MODELS if os.environ.get("HF_TOKEN", "") else DEFAULT_MODELS
@@ -82,14 +87,21 @@ def _compute_results(model_name: str) -> ModelTestResults:
 
     This ensures at most 2 full model copies exist at any time, and models
     are freed as soon as their outputs are captured.
+
+    Raises pytest.skip if the model is gated and access is denied.
     """
     trust = _needs_remote_code(model_name)
     results = ModelTestResults(model_name=model_name)
 
     # Phase 1: Load raw TL model, capture weight info and logits
-    raw_model = HookedTransformer.from_pretrained_no_processing(
-        model_name, device="cpu", trust_remote_code=trust
-    )
+    try:
+        raw_model = HookedTransformer.from_pretrained_no_processing(
+            model_name, device="cpu", trust_remote_code=trust
+        )
+    except (GatedRepoError, OSError) as e:
+        if "gated repo" in str(e).lower() or "Cannot access gated repo" in str(e):
+            pytest.skip(f"Gated model {model_name} not accessible: {e}")
+        raise
     tokens = raw_model.to_tokens(TEST_PROMPT, prepend_bos=True)
 
     for name, param in raw_model.named_parameters():
