@@ -30,7 +30,6 @@ from huggingface_hub.errors import GatedRepoError
 from transformers import AutoModelForCausalLM
 
 from transformer_lens import HookedTransformer
-from transformer_lens.utils import clear_huggingface_cache
 
 # Models already downloaded by other tests in the default suite (no HF_TOKEN needed).
 # One per architecture family, picking the smallest available.
@@ -140,9 +139,6 @@ def _compute_results(model_name: str) -> ModelTestResults:
     del processed_model
     gc.collect()
 
-    if "GITHUB_ACTIONS" in os.environ:
-        clear_huggingface_cache()
-
     return results
 
 
@@ -167,8 +163,8 @@ class TestModelAccuracy:
 
     def test_logits_match_huggingface(self, results):
         """End-to-end logits should match HF model (compared after softmax)."""
-        # Small differences arise from TL's custom hooked modules (e.g. LayerNorm reimplementations).
-        # Gemma models can reach ~3.5e-4 due to embedding scaling and RMSNorm differences.
+        # Generous tolerance is fine here: correct models diff at <5e-4,
+        # broken conversions (e.g. missing Gemma +1) diff at ~1.0.
         assert torch.allclose(results.tl_probs, results.hf_probs, atol=5e-4), (
             f"Logit mismatch for {results.model_name}. "
             f"Max diff: {(results.tl_probs - results.hf_probs).abs().max().item():.2e}"
