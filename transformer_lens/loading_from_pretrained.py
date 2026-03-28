@@ -1433,7 +1433,9 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "n_heads": hf_config.num_attention_heads,
             "d_mlp": hf_config.intermediate_size,
             "n_layers": hf_config.num_hidden_layers,
-            "n_ctx": min(hf_config.max_position_embeddings, 8192),  # Capped to avoid huge attn matrices
+            "n_ctx": min(
+                hf_config.max_position_embeddings, 8192
+            ),  # Capped to avoid huge attn matrices
             "eps": hf_config.rms_norm_eps,
             "d_vocab": hf_config.vocab_size,
             "act_fn": hf_config.hidden_act,
