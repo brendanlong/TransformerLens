@@ -249,6 +249,13 @@ OFFICIAL_MODEL_NAMES = [
     "Qwen/Qwen2.5-72B",
     "Qwen/Qwen2.5-72B-Instruct",
     "Qwen/QwQ-32B-Preview",
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+    "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
     "Qwen/Qwen3-0.6B",
     "Qwen/Qwen3-0.6B-Base",
     "Qwen/Qwen3-1.7B",
@@ -730,6 +737,13 @@ MODEL_ALIASES = {
     "Qwen/Qwen2.5-72B": ["qwen2.5-72b"],
     "Qwen/Qwen2.5-72B-Instruct": ["qwen2.5-72b-instruct"],
     "Qwen/QwQ-32B-Preview": ["qwen-32b-preview"],
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": ["deepseek-r1-distill-qwen-1.5b"],
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": ["deepseek-r1-distill-qwen-7b"],
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": ["deepseek-r1-distill-qwen-14b"],
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B": ["deepseek-r1-distill-qwen-32b"],
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": ["deepseek-r1-distill-llama-8b"],
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": ["deepseek-r1-distill-llama-70b"],
+    "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": ["deepseek-r1-0528-qwen3-8b"],
     "Qwen/Qwen3-0.6B": ["qwen3-0.6b"],
     "Qwen/Qwen3-0.6B-Base": ["qwen3-0.6b-base"],
     "Qwen/Qwen3-1.7B": ["qwen3-1.7b"],
@@ -795,6 +809,7 @@ NEED_REMOTE_CODE_MODELS = (
     "bigcode/santacoder",
     "Qwen/Qwen-",
     "Qwen/Qwen3-",
+    "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
     "microsoft/phi-2",
     "microsoft/Phi-3-mini-4k-instruct",
     "microsoft/phi-4",
@@ -1029,7 +1044,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "window_size": hf_config.sliding_window,  # None if no sliding window was used
             "attn_types": ["local"] * hf_config.num_hidden_layers if use_local_attn else None,
             "eps": hf_config.rms_norm_eps,
-            "rotary_base": hf_config.rope_theta,
+            "rotary_base": int(hf_config.rope_theta),
             "n_key_value_heads": hf_config.num_key_value_heads,
             "use_local_attn": use_local_attn,
             "normalization_type": "RMS",
@@ -1049,7 +1064,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "act_fn": hf_config.hidden_act,
             "normalization_type": "RMS",
             "positional_embedding_type": "rotary",
-            "rotary_base": hf_config.rope_theta,
+            "rotary_base": int(hf_config.rope_theta),
             "window_size": hf_config.sliding_window,  # This is None, as no sliding window was used
             "attn_types": ["global"] * 32,
             "eps": hf_config.rms_norm_eps,
@@ -1073,7 +1088,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "act_fn": hf_config.hidden_act,
             "normalization_type": "RMS",
             "positional_embedding_type": "rotary",
-            "rotary_base": hf_config.rope_theta,
+            "rotary_base": int(hf_config.rope_theta),
             "eps": hf_config.rms_norm_eps,
             "n_key_value_heads": hf_config.num_key_value_heads,
             "gated_mlp": True,
@@ -1150,7 +1165,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
         }
         rope_theta = getattr(hf_config, "rope_theta", None)
         if rope_theta is not None and rope_theta != 10000:
-            cfg_dict["rotary_base"] = rope_theta
+            cfg_dict["rotary_base"] = int(rope_theta)
         rope_scaling = getattr(hf_config, "rope_scaling", None)
         if rope_scaling:
             rope_type = (rope_scaling.get("type") or rope_scaling.get("rope_type") or "").lower()
@@ -1269,7 +1284,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "normalization_type": "LN",
             "positional_embedding_type": "rotary",
             "trust_remote_code": True,
-            "rotary_base": hf_config.rope_theta,
+            "rotary_base": int(hf_config.rope_theta),
             "use_attn_scale": True,
             "parallel_attn_mlp": True,
         }
@@ -1296,7 +1311,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "normalization_type": "RMS",
             "positional_embedding_type": "rotary",
             "trust_remote_code": True,
-            "rotary_base": hf_config.rope_theta,
+            "rotary_base": int(hf_config.rope_theta),
             "use_attn_scale": True,
             "gated_mlp": True,
             "parallel_attn_mlp": False,

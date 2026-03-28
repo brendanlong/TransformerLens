@@ -63,6 +63,10 @@ FULL_MODEL_NAMES = [
     "microsoft/phi-2",
     "google/gemma-2b",
     "google/gemma-7b",
+    "deepseek-r1-distill-qwen-1.5b",
+    "deepseek-r1-distill-qwen-7b",
+    "deepseek-r1-distill-llama-8b",
+    "deepseek-r1-0528-qwen3-8b",
 ]
 
 # Use full model list if HF_TOKEN is available, otherwise use public models only
@@ -102,6 +106,10 @@ FULL_LOSS_STORE = {
     "solu-1l": 5.256411552429199,
     "tiny-stories-33M": 12.203617095947266,
     "bloom-560m": 5.237126350402832,
+    "deepseek-r1-distill-qwen-1.5b": 6.710656642913818,
+    "deepseek-r1-distill-qwen-7b": 5.144234657287598,
+    "deepseek-r1-distill-llama-8b": 6.154810905456543,
+    "deepseek-r1-0528-qwen3-8b": 5.224148750305176,
 }
 
 # Use full store if HF_TOKEN is available, otherwise use small store
