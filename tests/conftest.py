@@ -2,6 +2,10 @@
 
 Downloads each model once per test session, groups all tests needing a model together,
 and selectively evicts that model from the HF cache when its group finishes.
+
+IMPORTANT: This file must NOT import transformer_lens at the top level.
+The jaxtyping pytest plugin needs to install import hooks before transformer_lens
+is imported, so we defer all TL imports to inside functions/fixtures.
 """
 
 import gc
@@ -10,10 +14,6 @@ import os
 
 import pytest
 import torch
-
-from transformer_lens import HookedTransformer
-from transformer_lens.loading_from_pretrained import get_official_model_name
-
 
 # ---------------------------------------------------------------------------
 # Model registry
@@ -83,30 +83,48 @@ KEEP_CACHED = {
 
 # ---------------------------------------------------------------------------
 # Alias resolution: map any TL alias to its canonical HF repo name
+#
+# Deferred: _CANONICAL_MAP is built lazily on first access to avoid
+# importing transformer_lens at module load time.
 # ---------------------------------------------------------------------------
+
+_CANONICAL_MAP = None
+_seen_official = None
+
+
+def _ensure_alias_map():
+    """Build the alias map on first use (defers transformer_lens import)."""
+    global _CANONICAL_MAP, _seen_official
+    if _CANONICAL_MAP is not None:
+        return
+
+    from transformer_lens.loading_from_pretrained import get_official_model_name
+
+    _CANONICAL_MAP = {}
+    _seen_official = {}
+    for name in ALL_TEST_MODELS:
+        try:
+            official = get_official_model_name(name)
+        except ValueError:
+            official = name
+        if official not in _seen_official:
+            _seen_official[official] = name
+        _CANONICAL_MAP[name] = _seen_official[official]
+
 
 def _resolve_to_official(model_name: str) -> str:
     """Resolve a TL alias to its official HF repo name."""
+    from transformer_lens.loading_from_pretrained import get_official_model_name
+
     try:
         return get_official_model_name(model_name)
     except ValueError:
         return model_name
 
 
-# Build a map: alias -> canonical entry in ALL_TEST_MODELS
-# e.g. "gpt2-small" -> "gpt2", "opt-125m" -> "facebook/opt-125m"
-_CANONICAL_MAP: dict[str, str] = {}
-_seen_official: dict[str, str] = {}  # official_name -> first ALL_TEST_MODELS entry
-
-for _name in ALL_TEST_MODELS:
-    _official = _resolve_to_official(_name)
-    if _official not in _seen_official:
-        _seen_official[_official] = _name
-    _CANONICAL_MAP[_name] = _seen_official[_official]
-
-
 def canonical_model_name(name: str) -> str:
     """Return the ALL_TEST_MODELS entry that this alias resolves to."""
+    _ensure_alias_map()
     if name in _CANONICAL_MAP:
         return _CANONICAL_MAP[name]
     official = _resolve_to_official(name)
@@ -116,6 +134,7 @@ def canonical_model_name(name: str) -> str:
 # ---------------------------------------------------------------------------
 # Marker: @pytest.mark.needs_model("gpt2-small", "opt-125m", ...)
 # ---------------------------------------------------------------------------
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -136,14 +155,17 @@ def pytest_collection_modifyitems(config, items):
         if hasattr(item, "callspec") and "current_model_name" in item.callspec.params:
             current = item.callspec.params["current_model_name"]
             if current not in needed_canonical:
-                item.add_marker(pytest.mark.skip(
-                    reason=f"needs one of {needed_canonical}, current is {current}"
-                ))
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason=f"needs one of {needed_canonical}, current is {current}"
+                    )
+                )
 
 
 # ---------------------------------------------------------------------------
 # Session-scoped fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session", params=ALL_TEST_MODELS)
 def current_model_name(request):
@@ -170,6 +192,8 @@ def _param_checksum(model) -> str:
 @pytest.fixture(scope="session")
 def loaded_model(current_model_name):
     """Shared read-only HookedTransformer. Teardown asserts no mutation occurred."""
+    from transformer_lens import HookedTransformer
+
     model = HookedTransformer.from_pretrained(current_model_name, device="cpu")
     checksum = _param_checksum(model)
     yield model
@@ -184,14 +208,14 @@ def loaded_model(current_model_name):
 @pytest.fixture(scope="session")
 def loaded_model_no_processing(current_model_name):
     """Shared read-only model loaded without weight processing."""
-    model = HookedTransformer.from_pretrained_no_processing(
-        current_model_name, device="cpu"
-    )
+    from transformer_lens import HookedTransformer
+
+    model = HookedTransformer.from_pretrained_no_processing(current_model_name, device="cpu")
     checksum = _param_checksum(model)
     yield model
-    assert _param_checksum(model) == checksum, (
-        f"loaded_model_no_processing for {current_model_name} was mutated!"
-    )
+    assert (
+        _param_checksum(model) == checksum
+    ), f"loaded_model_no_processing for {current_model_name} was mutated!"
     del model
     gc.collect()
 
@@ -199,6 +223,7 @@ def loaded_model_no_processing(current_model_name):
 # ---------------------------------------------------------------------------
 # Selective HF cache eviction
 # ---------------------------------------------------------------------------
+
 
 def _evict_model(model_name: str):
     """Delete a single model from the HF cache (CI only)."""
@@ -211,9 +236,7 @@ def _evict_model(model_name: str):
         cache_info = scan_cache_dir()
         for repo in cache_info.repos:
             if repo.repo_id == hf_repo:
-                strategy = cache_info.delete_revisions(
-                    *(rev.commit_hash for rev in repo.revisions)
-                )
+                strategy = cache_info.delete_revisions(*(rev.commit_hash for rev in repo.revisions))
                 strategy.execute()
                 break
     except Exception:

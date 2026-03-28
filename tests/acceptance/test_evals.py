@@ -6,7 +6,6 @@ from transformer_lens.evals import (
     make_mmlu_data_loader,
     mmlu_eval,
 )
-from transformer_lens.HookedTransformer import HookedTransformer
 
 
 @pytest.mark.needs_model("gpt2")

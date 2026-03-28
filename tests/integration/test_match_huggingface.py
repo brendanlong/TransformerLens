@@ -2,8 +2,6 @@ import pytest
 import torch
 from transformers import AutoModelForCausalLM
 
-from transformer_lens import HookedTransformer
-
 
 @pytest.mark.needs_model("gpt2")
 class TestMatchHuggingFace:
