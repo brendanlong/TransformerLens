@@ -101,11 +101,15 @@ class TestGemma3ModelRegistration:
 
     @pytest.mark.parametrize("model_name", GEMMA3_MODELS)
     def test_gemma3_models_in_official_list(self, model_name: str):
-        assert model_name in OFFICIAL_MODEL_NAMES, f"{model_name} should be in OFFICIAL_MODEL_NAMES"
+        assert model_name in OFFICIAL_MODEL_NAMES, (
+            f"{model_name} should be in OFFICIAL_MODEL_NAMES"
+        )
 
     @pytest.mark.parametrize("model_name", MEDGEMMA_MODELS)
     def test_medgemma_models_in_official_list(self, model_name: str):
-        assert model_name in OFFICIAL_MODEL_NAMES, f"{model_name} should be in OFFICIAL_MODEL_NAMES"
+        assert model_name in OFFICIAL_MODEL_NAMES, (
+            f"{model_name} should be in OFFICIAL_MODEL_NAMES"
+        )
 
 
 # ============================================================================
@@ -132,7 +136,9 @@ class TestGemma3ConfigGeneration:
             ("google/gemma-3-1b-it", "1b"),
         ],
     )
-    def test_gemma3_small_model_config(self, model_name: str, size_key: str, mock_hf_config):
+    def test_gemma3_small_model_config(
+        self, model_name: str, size_key: str, mock_hf_config
+    ):
         """Test configuration for small Gemma 3 models (270M, 1B)."""
         with mock.patch(
             "transformer_lens.loading_from_pretrained.AutoConfig.from_pretrained",
@@ -157,7 +163,9 @@ class TestGemma3ConfigGeneration:
             ("google/medgemma-4b-it", "4b"),
         ],
     )
-    def test_gemma3_4b_model_config(self, model_name: str, size_key: str, mock_hf_config):
+    def test_gemma3_4b_model_config(
+        self, model_name: str, size_key: str, mock_hf_config
+    ):
         """Test configuration for 4B models (Gemma 3 and MedGemma)."""
         mock_hf_config.architectures = ["Gemma3ForConditionalGeneration"]
         with mock.patch(
@@ -202,7 +210,9 @@ class TestGemma3HybridAttention:
         # Check 5:1 pattern: global at indices 5, 11, 17
         for i, attn_type in enumerate(cfg.attn_types):
             expected = "global" if (i + 1) % 6 == 0 else "local"
-            assert attn_type == expected, f"Layer {i}: expected {expected}, got {attn_type}"
+            assert attn_type == expected, (
+                f"Layer {i}: expected {expected}, got {attn_type}"
+            )
 
     def test_attn_types_pattern_1b(self, mock_hf_config):
         """Test 5:1 local/global pattern for 1B (26 layers)."""
