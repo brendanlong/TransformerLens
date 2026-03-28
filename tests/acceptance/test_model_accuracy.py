@@ -105,9 +105,7 @@ def _compute_results(model_name: str) -> ModelTestResults:
 
     for name, param in raw_model.named_parameters():
         is_bias = "b_" in name or name.endswith(".b")
-        results.param_info.append(
-            (name, param.shape.numel(), is_bias, bool(torch.all(param == 0)))
-        )
+        results.param_info.append((name, param.shape.numel(), is_bias, bool(torch.all(param == 0))))
 
     with torch.no_grad():
         raw_logits = raw_model(tokens, prepend_bos=False).float()
