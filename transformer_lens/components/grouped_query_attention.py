@@ -197,8 +197,9 @@ class GroupedQueryAttention(AbstractAttention):
         Returns:
             Normalized tensor with same shape as input
         """
-        # Reshape from [batch, pos, head_index, d_head] to [batch * pos * head_index, d_head]
+        # Reshape from [batch, pos, head_index, d_head] to [batch * pos, head_index, d_head]
+        # so it matches RMSNorm's expected 3D input shape (batch, pos, length)
         batch, pos, n_heads, d_head = x.shape
-        x_reshaped = x.reshape(-1, d_head)
+        x_reshaped = x.reshape(batch * pos, n_heads, d_head)
         x_normed = norm_module(x_reshaped)
         return x_normed.reshape(batch, pos, n_heads, d_head)

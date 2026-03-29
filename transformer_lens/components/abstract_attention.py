@@ -357,10 +357,11 @@ class AbstractAttention(ABC, nn.Module):
         Returns:
             Normalized tensor with same shape as input
         """
-        # Reshape from [batch, pos, head_index, d_head] to [batch * pos * head_index, d_head]
-        d_head = x.shape[-1]
-        x_normed = norm_module(x.reshape(-1, d_head))
-        return x_normed.reshape(x.shape)
+        # Reshape from [batch, pos, head_index, d_head] to [batch * pos, head_index, d_head]
+        # so it matches RMSNorm's expected 3D input shape (batch, pos, length)
+        batch, pos, n_heads, d_head = x.shape
+        x_normed = norm_module(x.reshape(batch * pos, n_heads, d_head))
+        return x_normed.reshape(batch, pos, n_heads, d_head)
 
     def calculate_qkv_matrices(
         self,
