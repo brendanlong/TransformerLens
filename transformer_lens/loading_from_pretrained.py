@@ -2009,7 +2009,7 @@ def convert_hf_model_config(model_name: str, **kwargs: Any):
             "n_key_value_heads": 4,
             "window_size": 4096,
             "use_local_attn": True,
-            "attn_types": ["global", "local"] * 21,  # Alternate global and local attn
+            "attn_types": ["global", "local"] * 13,  # Alternate global and local attn (26 layers)
             "attn_scores_soft_cap": 50.0,
             "output_logits_soft_cap": 30.0,
             "gated_mlp": True,
