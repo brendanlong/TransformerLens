@@ -15,6 +15,16 @@ from transformer_lens.loading_from_pretrained import (
 )
 from transformer_lens.utils import delete_model_from_cache
 
+
+def _is_ci_cached_model(name):
+    """Check if model is explicitly cached in CI (see .github/workflows/checks.yml)."""
+    repo_id = get_official_model_name(name)
+    if repo_id == "gpt2":
+        return True
+    # Prefix matches corresponding to glob patterns in CI cache config
+    return repo_id.startswith(("NeelNanda/Attn_Only", "roneneldan/TinyStories-1M"))
+
+
 TINY_STORIES_MODEL_NAMES = [
     name for name in OFFICIAL_MODEL_NAMES if name.startswith("roneneldan/TinyStories")
 ]
@@ -125,7 +135,7 @@ def test_model(name, expected_loss):
     del model
     gc.collect()
 
-    if "GITHUB_ACTIONS" in os.environ:
+    if "GITHUB_ACTIONS" in os.environ and not _is_ci_cached_model(name):
         delete_model_from_cache(name)
 
 
