@@ -13,7 +13,7 @@ from transformer_lens.loading_from_pretrained import (
     OFFICIAL_MODEL_NAMES,
     get_official_model_name,
 )
-from transformer_lens.utils import clear_huggingface_cache
+from transformer_lens.utils import delete_model_from_cache
 
 TINY_STORIES_MODEL_NAMES = [
     name for name in OFFICIAL_MODEL_NAMES if name.startswith("roneneldan/TinyStories")
@@ -126,7 +126,7 @@ def test_model(name, expected_loss):
     gc.collect()
 
     if "GITHUB_ACTIONS" in os.environ:
-        clear_huggingface_cache()
+        delete_model_from_cache(name)
 
 
 def test_othello_gpt():

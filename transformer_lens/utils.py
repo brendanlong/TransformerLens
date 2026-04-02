@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import sys
 import warnings
 from copy import deepcopy
@@ -26,13 +25,14 @@ import torch.nn.functional as F
 import transformers
 from datasets.arrow_dataset import Dataset
 from datasets.load import load_dataset
-from huggingface_hub import constants, hf_hub_download
+from huggingface_hub import constants, hf_hub_download, scan_cache_dir
 from jaxtyping import Float, Int
 from rich import print as rprint
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from transformer_lens.FactoredMatrix import FactoredMatrix
+from transformer_lens.loading_from_pretrained import get_official_model_name
 
 CACHE_DIR = constants.HUGGINGFACE_HUB_CACHE
 USE_DEFAULT_VALUE = None
@@ -84,24 +84,40 @@ def download_file_from_hf(
         return file_path
 
 
-def clear_huggingface_cache():
+def delete_model_from_cache(model_name: str):
+    """Deletes a specific model's files from the Hugging Face cache.
+
+    You will need to download the model again if you want to use it in your code.
+
+    This function is designed for CI use and ignores failures.
+
+    Args:
+        model_name: The model name or alias (e.g. "gpt2-small", "EleutherAI/pythia-70m").
     """
-    Deletes the Hugging Face cache directory and all its contents.
 
-    This function deletes the Hugging Face cache directory, which is used to store downloaded models and their associated files. Deleting the cache directory will remove all the downloaded models and their files, so you will need to download them again if you want to use them in your code.
+    try:
+        repo_id = get_official_model_name(model_name)
+    except ValueError:
+        repo_id = model_name
 
-    Parameters:
-    None
-
-    Returns:
-    None
-    """
-    print("Deleting Hugging Face cache directory and all its contents.")
-    # ignore_errors=True: this is CI-only best-effort disk cleanup; the HuggingFace
-    # cache may still have background writes (lock files, .incomplete blobs) in
-    # flight after model deletion, causing transient ENOENT/ENOTEMPTY races.
-    # A partial deletion is acceptable — it doesn't affect test correctness.
-    shutil.rmtree(CACHE_DIR, ignore_errors=True)
+    try:
+        cache_info = scan_cache_dir()
+        hashes_to_delete = [
+            revision.commit_hash
+            for repo in cache_info.repos
+            if repo.repo_id == repo_id
+            for revision in repo.revisions
+        ]
+        if hashes_to_delete:
+            delete_strategy = cache_info.delete_revisions(*hashes_to_delete)
+            print(f"Deleting {delete_strategy.expected_freed_size_str} for model '{repo_id}'.")
+            delete_strategy.execute()
+        else:
+            print(f"Model '{repo_id}' not found in cache.")
+    except OSError as e:
+        # Best-effort cleanup: the cache may have lock files or incomplete blobs
+        # from concurrent writes, causing transient filesystem errors.
+        print(f"Failed to delete model '{repo_id}' from cache: {e}")
 
 
 def print_gpu_mem(step_name: str = ""):

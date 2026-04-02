@@ -99,7 +99,7 @@ functions_to_ignore = [
     "make_df_from_ranges",
     # functions from utils.py
     "check_structure",
-    "clear_huggingface_cache",
+    "delete_model_from_cache",
     "select_compatible_kwargs",
 ]
 
