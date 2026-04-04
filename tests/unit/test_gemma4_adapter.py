@@ -376,3 +376,264 @@ class TestGemma4LayerTypePattern:
         assert len(types) == 48
         global_count = types.count("full_attention")
         assert global_count == 8
+
+
+# ============================================================================
+# Fixtures: MoE and PLE
+# ============================================================================
+
+
+@pytest.fixture
+def moe_cfg():
+    """Config for a Gemma 4 MoE model (like 26B-A4B)."""
+    return _make_cfg(
+        n_layers=30,
+        n_heads=8,
+        d_head=256,
+        n_kv_heads=8,
+        d_model=2304,
+        d_mlp=9216,
+        attention_k_eq_v=True,
+        global_head_dim=512,
+        num_global_kv_heads=2,
+        enable_moe_block=True,
+    )
+
+
+@pytest.fixture
+def ple_cfg():
+    """Config for a Gemma 4 PLE model (like E2B/E4B)."""
+    return _make_cfg(
+        n_layers=30,
+        n_heads=8,
+        d_head=256,
+        n_kv_heads=4,
+        d_model=2304,
+        d_mlp=9216,
+        hidden_size_per_layer_input=256,
+    )
+
+
+@pytest.fixture
+def moe_adapter(moe_cfg):
+    return Gemma4ArchitectureAdapter(moe_cfg)
+
+
+@pytest.fixture
+def ple_adapter(ple_cfg):
+    return Gemma4ArchitectureAdapter(ple_cfg)
+
+
+# ============================================================================
+# Test: MoE component mapping
+# ============================================================================
+
+
+class TestGemma4MoEComponentMapping:
+    """Test MoE-specific component mapping when enable_moe_block is True."""
+
+    def test_moe_submodule_present(self, moe_adapter):
+        blocks = moe_adapter.component_mapping["blocks"]
+        assert "moe" in blocks.submodules
+
+    def test_moe_bridge_name(self, moe_adapter):
+        moe = moe_adapter.component_mapping["blocks"].submodules["moe"]
+        assert moe.name == "experts"
+
+    def test_moe_gate_submodule(self, moe_adapter):
+        moe = moe_adapter.component_mapping["blocks"].submodules["moe"]
+        assert "gate" in moe.submodules
+
+    def test_moe_extra_norms_present(self, moe_adapter):
+        blocks = moe_adapter.component_mapping["blocks"]
+        assert "ln2_post_mlp" in blocks.submodules
+        assert "ln2_pre_moe" in blocks.submodules
+        assert "ln2_post_moe" in blocks.submodules
+
+    def test_moe_norm_names(self, moe_adapter):
+        blocks = moe_adapter.component_mapping["blocks"]
+        assert blocks.submodules["ln2_post_mlp"].name == "post_feedforward_layernorm_1"
+        assert blocks.submodules["ln2_pre_moe"].name == "pre_feedforward_layernorm_2"
+        assert blocks.submodules["ln2_post_moe"].name == "post_feedforward_layernorm_2"
+
+    def test_dense_has_no_moe(self, dense_adapter):
+        """Dense models should not have MoE submodules."""
+        blocks = dense_adapter.component_mapping["blocks"]
+        assert "moe" not in blocks.submodules
+        assert "ln2_post_mlp" not in blocks.submodules
+
+    def test_moe_still_has_standard_mlp(self, moe_adapter):
+        """MoE models still have the standard MLP (runs in parallel with MoE)."""
+        blocks = moe_adapter.component_mapping["blocks"]
+        assert "mlp" in blocks.submodules
+
+
+# ============================================================================
+# Test: MoE path translation
+# ============================================================================
+
+
+class TestGemma4MoEPathTranslation:
+    """Test path translation for MoE-specific components."""
+
+    def test_moe_experts_path(self, moe_adapter):
+        assert (
+            moe_adapter.translate_transformer_lens_path("blocks.0.moe") == "model.layers.0.experts"
+        )
+
+    def test_moe_ln2_post_mlp_path(self, moe_adapter):
+        assert (
+            moe_adapter.translate_transformer_lens_path("blocks.0.ln2_post_mlp")
+            == "model.layers.0.post_feedforward_layernorm_1"
+        )
+
+    def test_moe_ln2_pre_moe_path(self, moe_adapter):
+        assert (
+            moe_adapter.translate_transformer_lens_path("blocks.0.ln2_pre_moe")
+            == "model.layers.0.pre_feedforward_layernorm_2"
+        )
+
+
+# ============================================================================
+# Test: PLE component mapping
+# ============================================================================
+
+
+class TestGemma4PLEComponentMapping:
+    """Test PLE-specific component mapping when hidden_size_per_layer_input > 0."""
+
+    def test_ple_model_level_components(self, ple_adapter):
+        """Model-level PLE components should be in top-level mapping."""
+        assert "ple_embed" in ple_adapter.component_mapping
+        assert "ple_model_proj" in ple_adapter.component_mapping
+        assert "ple_model_proj_norm" in ple_adapter.component_mapping
+
+    def test_ple_embed_name(self, ple_adapter):
+        assert ple_adapter.component_mapping["ple_embed"].name == "model.embed_tokens_per_layer"
+
+    def test_ple_model_proj_name(self, ple_adapter):
+        assert (
+            ple_adapter.component_mapping["ple_model_proj"].name
+            == "model.per_layer_model_projection"
+        )
+
+    def test_ple_model_proj_norm_name(self, ple_adapter):
+        assert (
+            ple_adapter.component_mapping["ple_model_proj_norm"].name
+            == "model.per_layer_projection_norm"
+        )
+
+    def test_ple_block_submodules(self, ple_adapter):
+        blocks = ple_adapter.component_mapping["blocks"]
+        assert "ple_gate" in blocks.submodules
+        assert "ple_proj" in blocks.submodules
+        assert "ple_norm" in blocks.submodules
+
+    def test_ple_block_submodule_names(self, ple_adapter):
+        blocks = ple_adapter.component_mapping["blocks"]
+        assert blocks.submodules["ple_gate"].name == "per_layer_input_gate"
+        assert blocks.submodules["ple_proj"].name == "per_layer_projection"
+        assert blocks.submodules["ple_norm"].name == "post_per_layer_input_norm"
+
+    def test_dense_has_no_ple(self, dense_adapter):
+        """Dense models should not have PLE components."""
+        assert "ple_embed" not in dense_adapter.component_mapping
+        blocks = dense_adapter.component_mapping["blocks"]
+        assert "ple_gate" not in blocks.submodules
+
+
+# ============================================================================
+# Test: PLE path translation
+# ============================================================================
+
+
+class TestGemma4PLEPathTranslation:
+    """Test path translation for PLE-specific components."""
+
+    def test_ple_embed_path(self, ple_adapter):
+        assert (
+            ple_adapter.translate_transformer_lens_path("ple_embed")
+            == "model.embed_tokens_per_layer"
+        )
+
+    def test_ple_gate_path(self, ple_adapter):
+        assert (
+            ple_adapter.translate_transformer_lens_path("blocks.0.ple_gate")
+            == "model.layers.0.per_layer_input_gate"
+        )
+
+    def test_ple_proj_path(self, ple_adapter):
+        assert (
+            ple_adapter.translate_transformer_lens_path("blocks.0.ple_proj")
+            == "model.layers.0.per_layer_projection"
+        )
+
+    def test_ple_norm_path(self, ple_adapter):
+        assert (
+            ple_adapter.translate_transformer_lens_path("blocks.0.ple_norm")
+            == "model.layers.0.post_per_layer_input_norm"
+        )
+
+
+# ============================================================================
+# Test: PLE weight conversions
+# ============================================================================
+
+
+class TestGemma4PLEWeightConversions:
+    """Test weight conversions for PLE components."""
+
+    def test_ple_gate_weight_conversion(self, ple_adapter):
+        assert "blocks.0.ple_gate.weight" in ple_adapter.weight_processing_conversions
+
+    def test_ple_proj_weight_conversion(self, ple_adapter):
+        assert "blocks.0.ple_proj.weight" in ple_adapter.weight_processing_conversions
+
+    def test_ple_model_proj_weight_conversion(self, ple_adapter):
+        assert "ple_model_proj.weight" in ple_adapter.weight_processing_conversions
+
+    def test_ple_all_layers_have_gate_conversion(self, ple_adapter):
+        for i in range(30):
+            assert f"blocks.{i}.ple_gate.weight" in ple_adapter.weight_processing_conversions
+
+    def test_dense_has_no_ple_conversions(self, dense_adapter):
+        ple_keys = [k for k in dense_adapter.weight_processing_conversions if "ple" in k]
+        assert len(ple_keys) == 0
+
+
+# ============================================================================
+# Test: Combined MoE + PLE
+# ============================================================================
+
+
+class TestGemma4MoEPlusPLE:
+    """Test that MoE and PLE can coexist (though no current model uses both)."""
+
+    @pytest.fixture
+    def combined_cfg(self):
+        return _make_cfg(
+            n_layers=30,
+            attention_k_eq_v=True,
+            num_global_kv_heads=2,
+            enable_moe_block=True,
+            hidden_size_per_layer_input=256,
+        )
+
+    @pytest.fixture
+    def combined_adapter(self, combined_cfg):
+        return Gemma4ArchitectureAdapter(combined_cfg)
+
+    def test_both_moe_and_ple_present(self, combined_adapter):
+        blocks = combined_adapter.component_mapping["blocks"]
+        # MoE
+        assert "moe" in blocks.submodules
+        assert "ln2_post_mlp" in blocks.submodules
+        # PLE
+        assert "ple_gate" in blocks.submodules
+        assert "ple_proj" in blocks.submodules
+        # Still has standard MLP
+        assert "mlp" in blocks.submodules
+
+    def test_both_model_level_ple_components(self, combined_adapter):
+        assert "ple_embed" in combined_adapter.component_mapping
+        assert "ple_model_proj" in combined_adapter.component_mapping
