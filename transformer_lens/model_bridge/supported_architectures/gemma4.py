@@ -191,7 +191,6 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
         # PLE support: when hidden_size_per_layer_input > 0, each decoder layer
         # has a per-layer embedding gate, projection, and norm. HF handles the
         # PLE computation natively; the bridge exposes components for hook access.
-        ple_dim = getattr(self.cfg, "hidden_size_per_layer_input", 0) or 0
         if ple_dim > 0:
             block_submodules["ple_gate"] = LinearBridge(name="per_layer_input_gate")
             block_submodules["ple_proj"] = LinearBridge(name="per_layer_projection")
