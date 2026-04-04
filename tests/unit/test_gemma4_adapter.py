@@ -440,9 +440,11 @@ class TestGemma4MoEComponentMapping:
         moe = moe_adapter.component_mapping["blocks"].submodules["moe"]
         assert moe.name == "experts"
 
-    def test_moe_gate_submodule(self, moe_adapter):
-        moe = moe_adapter.component_mapping["blocks"].submodules["moe"]
-        assert "gate" in moe.submodules
+    def test_moe_router_submodule(self, moe_adapter):
+        """Router is a separate block submodule (sibling of experts in HF)."""
+        blocks = moe_adapter.component_mapping["blocks"]
+        assert "moe_router" in blocks.submodules
+        assert blocks.submodules["moe_router"].name == "router.proj"
 
     def test_moe_extra_norms_present(self, moe_adapter):
         blocks = moe_adapter.component_mapping["blocks"]
@@ -487,10 +489,22 @@ class TestGemma4MoEPathTranslation:
             == "model.layers.0.post_feedforward_layernorm_1"
         )
 
+    def test_moe_router_path(self, moe_adapter):
+        assert (
+            moe_adapter.translate_transformer_lens_path("blocks.0.moe_router")
+            == "model.layers.0.router.proj"
+        )
+
     def test_moe_ln2_pre_moe_path(self, moe_adapter):
         assert (
             moe_adapter.translate_transformer_lens_path("blocks.0.ln2_pre_moe")
             == "model.layers.0.pre_feedforward_layernorm_2"
+        )
+
+    def test_moe_ln2_post_moe_path(self, moe_adapter):
+        assert (
+            moe_adapter.translate_transformer_lens_path("blocks.0.ln2_post_moe")
+            == "model.layers.0.post_feedforward_layernorm_2"
         )
 
 
@@ -572,6 +586,18 @@ class TestGemma4PLEPathTranslation:
         assert (
             ple_adapter.translate_transformer_lens_path("blocks.0.ple_norm")
             == "model.layers.0.post_per_layer_input_norm"
+        )
+
+    def test_ple_model_proj_path(self, ple_adapter):
+        assert (
+            ple_adapter.translate_transformer_lens_path("ple_model_proj")
+            == "model.per_layer_model_projection"
+        )
+
+    def test_ple_model_proj_norm_path(self, ple_adapter):
+        assert (
+            ple_adapter.translate_transformer_lens_path("ple_model_proj_norm")
+            == "model.per_layer_projection_norm"
         )
 
 

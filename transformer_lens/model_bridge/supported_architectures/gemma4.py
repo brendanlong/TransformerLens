@@ -201,15 +201,18 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
 
         # MoE support: when enable_moe_block is True, each decoder layer has a
         # router + experts alongside the standard MLP. The MoE output is combined
-        # with the MLP output inside HF's forward pass. We expose the router as
-        # a MoEBridge for hook access (hook_router_scores).
+        # with the MLP output inside HF's forward pass.
+        #
+        # In Gemma 4, the router and experts are siblings in the decoder layer
+        # (unlike Mixtral where they're nested inside a single MoE module).
+        # We map them as separate block submodules for hook access:
+        # - moe_router: the router's projection (for inspecting expert selection)
+        # - moe: the experts module (wrapped by MoEBridge for hook_router_scores)
         if enable_moe:
+            block_submodules["moe_router"] = LinearBridge(name="router.proj")
             block_submodules["moe"] = MoEBridge(
                 name="experts",
                 config=self.cfg,
-                submodules={
-                    "gate": LinearBridge(name="router.proj"),
-                },
             )
             # Extra norms for MoE pathway
             block_submodules["ln2_post_mlp"] = RMSNormalizationBridge(
