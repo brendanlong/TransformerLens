@@ -81,7 +81,7 @@
     sentencepiece="*"
     torch=">=2.6"
     tqdm=">=4.64.1"
-    transformers=">=4.51"
+    transformers=">=5.5"
     transformers-stream-generator="^0.0.5"
     typeguard="^4.2"
     typing-extensions="*"
