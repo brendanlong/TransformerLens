@@ -1,6 +1,8 @@
 """Gemma4 architecture adapter.
 
-Supports the Gemma 4 dense text model (Gemma4ForCausalLM).
+Supports the Gemma 4 text model family (Gemma4ForCausalLM), including:
+- Dense models (e.g. 31B)
+- MoE models (e.g. 26B-A4B with 128 experts, top-8 routing)
 
 Key differences from the Gemma 3 adapter:
 - Per-layer attention parameters: sliding layers use head_dim/num_key_value_heads,
@@ -12,6 +14,9 @@ Key differences from the Gemma 3 adapter:
 - Activation changed from silu (Gemma 3) to gelu_pytorch_tanh.
 - RMSNorm weights are stored directly (no +1 offset unlike Gemma 3).
 - layer_scalar buffer multiplies each layer's output (handled natively by HF).
+- MoE: when enable_moe_block is True, each layer has a router + experts alongside
+  the standard MLP. The MoE output is combined with the MLP output. HF handles
+  the routing logic natively; the bridge exposes router/experts as submodules.
 """
 
 from typing import Any
@@ -29,6 +34,7 @@ from transformer_lens.model_bridge.generalized_components import (
     EmbeddingBridge,
     GatedMLPBridge,
     LinearBridge,
+    MoEBridge,
     RMSNormalizationBridge,
     RotaryEmbeddingBridge,
     UnembeddingBridge,
@@ -39,13 +45,13 @@ from transformer_lens.model_bridge.generalized_components.position_embeddings_at
 
 
 class Gemma4ArchitectureAdapter(ArchitectureAdapter):
-    """Architecture adapter for Gemma 4 dense text models (Gemma4ForCausalLM).
+    """Architecture adapter for Gemma 4 text models (Gemma4ForCausalLM).
 
-    Handles the 5:1 sliding/full attention pattern with per-layer head dimensions,
-    K=V parameter sharing on global layers, v_norm, and gelu_pytorch_tanh activation.
-
-    For MoE and PLE variants, see Gemma4MoEArchitectureAdapter and
-    Gemma4PLEArchitectureAdapter (to be added).
+    Handles both dense and MoE variants:
+    - 5:1 sliding/full attention pattern with per-layer head dimensions
+    - K=V parameter sharing on global layers
+    - v_norm on value states
+    - Optional MoE (router + experts alongside standard MLP)
     """
 
     def __init__(self, cfg: Any) -> None:
@@ -140,37 +146,58 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
             "v_norm": RMSNormalizationBridge(name="v_norm", config=self.cfg),
         }
 
+        # Build block submodules
+        block_submodules = {
+            "ln1": RMSNormalizationBridge(name="input_layernorm", config=self.cfg),
+            "ln1_post": RMSNormalizationBridge(name="post_attention_layernorm", config=self.cfg),
+            "ln2": RMSNormalizationBridge(name="pre_feedforward_layernorm", config=self.cfg),
+            "ln2_post": RMSNormalizationBridge(name="post_feedforward_layernorm", config=self.cfg),
+            "attn": PositionEmbeddingsAttentionBridge(
+                name="self_attn",
+                config=self.cfg,
+                submodules=attn_submodules,
+            ),
+            "mlp": GatedMLPBridge(
+                name="mlp",
+                config=self.cfg,
+                submodules={
+                    "gate": LinearBridge(name="gate_proj"),
+                    "in": LinearBridge(name="up_proj"),
+                    "out": LinearBridge(name="down_proj"),
+                },
+            ),
+        }
+
+        # MoE support: when enable_moe_block is True, each decoder layer has a
+        # router + experts alongside the standard MLP. The MoE output is combined
+        # with the MLP output inside HF's forward pass. We expose the router as
+        # a MoEBridge for hook access (hook_router_scores).
+        enable_moe = getattr(self.cfg, "enable_moe_block", False)
+        if enable_moe:
+            block_submodules["moe"] = MoEBridge(
+                name="experts",
+                config=self.cfg,
+                submodules={
+                    "gate": LinearBridge(name="router.proj"),
+                },
+            )
+            # Extra norms for MoE pathway
+            block_submodules["ln2_post_mlp"] = RMSNormalizationBridge(
+                name="post_feedforward_layernorm_1", config=self.cfg
+            )
+            block_submodules["ln2_pre_moe"] = RMSNormalizationBridge(
+                name="pre_feedforward_layernorm_2", config=self.cfg
+            )
+            block_submodules["ln2_post_moe"] = RMSNormalizationBridge(
+                name="post_feedforward_layernorm_2", config=self.cfg
+            )
+
         self.component_mapping = {
             "embed": EmbeddingBridge(name="model.embed_tokens"),
             "rotary_emb": RotaryEmbeddingBridge(name="model.rotary_emb"),
             "blocks": BlockBridge(
                 name="model.layers",
-                submodules={
-                    "ln1": RMSNormalizationBridge(name="input_layernorm", config=self.cfg),
-                    "ln1_post": RMSNormalizationBridge(
-                        name="post_attention_layernorm", config=self.cfg
-                    ),
-                    "ln2": RMSNormalizationBridge(
-                        name="pre_feedforward_layernorm", config=self.cfg
-                    ),
-                    "ln2_post": RMSNormalizationBridge(
-                        name="post_feedforward_layernorm", config=self.cfg
-                    ),
-                    "attn": PositionEmbeddingsAttentionBridge(
-                        name="self_attn",
-                        config=self.cfg,
-                        submodules=attn_submodules,
-                    ),
-                    "mlp": GatedMLPBridge(
-                        name="mlp",
-                        config=self.cfg,
-                        submodules={
-                            "gate": LinearBridge(name="gate_proj"),
-                            "in": LinearBridge(name="up_proj"),
-                            "out": LinearBridge(name="down_proj"),
-                        },
-                    ),
-                },
+                submodules=block_submodules,
             ),
             "ln_final": RMSNormalizationBridge(name="model.norm", config=self.cfg),
             "unembed": UnembeddingBridge(name="lm_head"),
