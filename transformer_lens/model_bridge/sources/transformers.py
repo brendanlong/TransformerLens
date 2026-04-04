@@ -196,6 +196,7 @@ def determine_architecture_from_hf_config(hf_config):
             "gemma": "GemmaForCausalLM",
             "gemma2": "Gemma2ForCausalLM",
             "gemma3": "Gemma3ForCausalLM",
+            "gemma4_text": "Gemma4ForCausalLM",
             "bert": "BertForMaskedLM",
             "bloom": "BloomForCausalLM",
             "gptj": "GPTJForCausalLM",
@@ -342,6 +343,27 @@ def boot(
     attn_logit_softcapping = getattr(hf_config, "attn_logit_softcapping", None)
     if attn_logit_softcapping is not None:
         bridge_config.attn_scores_soft_cap = float(attn_logit_softcapping)
+    # Propagate Gemma 4-specific config fields for per-layer attention handling.
+    # These come from the text_config for multimodal models or hf_config directly.
+    _gemma4_source = (
+        hf_config.text_config
+        if hasattr(hf_config, "text_config") and hf_config.text_config is not None
+        else hf_config
+    )
+    for _attr in (
+        "layer_types",
+        "attention_k_eq_v",
+        "global_head_dim",
+        "num_global_key_value_heads",
+        "hidden_size_per_layer_input",
+        "vocab_size_per_layer_input",
+        "enable_moe_block",
+        "num_kv_shared_layers",
+        "use_double_wide_mlp",
+    ):
+        _val = getattr(_gemma4_source, _attr, None)
+        if _val is not None:
+            setattr(bridge_config, _attr, _val)
     # Propagate vision config for multimodal models so the adapter can
     # select the correct vision encoder bridge (CLIP vs SigLIP).
     if hasattr(hf_config, "vision_config") and hf_config.vision_config is not None:

@@ -21,6 +21,9 @@ from transformer_lens.model_bridge.supported_architectures.gemma3 import (
 from transformer_lens.model_bridge.supported_architectures.gemma3_multimodal import (
     Gemma3MultimodalArchitectureAdapter,
 )
+from transformer_lens.model_bridge.supported_architectures.gemma4 import (
+    Gemma4ArchitectureAdapter,
+)
 from transformer_lens.model_bridge.supported_architectures.gpt2 import (
     GPT2ArchitectureAdapter,
 )
@@ -57,6 +60,15 @@ from transformer_lens.model_bridge.supported_architectures.mixtral import (
 from transformer_lens.model_bridge.supported_architectures.nanogpt import (
     NanogptArchitectureAdapter,
 )
+from transformer_lens.model_bridge.supported_architectures.neel_solu_old import (
+    NeelSoluOldArchitectureAdapter,
+)
+from transformer_lens.model_bridge.supported_architectures.neo import (
+    NeoArchitectureAdapter,
+)
+from transformer_lens.model_bridge.supported_architectures.neox import (
+    NeoxArchitectureAdapter,
+)
 from transformer_lens.model_bridge.supported_architectures.olmo import (
     OlmoArchitectureAdapter,
 )
@@ -68,15 +80,6 @@ from transformer_lens.model_bridge.supported_architectures.olmo3 import (
 )
 from transformer_lens.model_bridge.supported_architectures.olmoe import (
     OlmoeArchitectureAdapter,
-)
-from transformer_lens.model_bridge.supported_architectures.neel_solu_old import (
-    NeelSoluOldArchitectureAdapter,
-)
-from transformer_lens.model_bridge.supported_architectures.neo import (
-    NeoArchitectureAdapter,
-)
-from transformer_lens.model_bridge.supported_architectures.neox import (
-    NeoxArchitectureAdapter,
 )
 from transformer_lens.model_bridge.supported_architectures.openelm import (
     OpenElmArchitectureAdapter,
@@ -116,6 +119,7 @@ __all__ = [
     "Gemma2ArchitectureAdapter",
     "Gemma3ArchitectureAdapter",
     "Gemma3MultimodalArchitectureAdapter",
+    "Gemma4ArchitectureAdapter",
     "GPT2ArchitectureAdapter",
     "GPTOSSArchitectureAdapter",
     "Gpt2LmHeadCustomArchitectureAdapter",
