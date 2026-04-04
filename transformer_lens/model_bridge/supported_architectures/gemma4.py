@@ -3,6 +3,7 @@
 Supports the Gemma 4 text model family (Gemma4ForCausalLM), including:
 - Dense models (e.g. 31B)
 - MoE models (e.g. 26B-A4B with 128 experts, top-8 routing)
+- PLE models (e.g. E2B/E4B with Per-Layer Embeddings)
 
 Key differences from the Gemma 3 adapter:
 - Per-layer attention parameters: sliding layers use head_dim/num_key_value_heads,
@@ -17,6 +18,9 @@ Key differences from the Gemma 3 adapter:
 - MoE: when enable_moe_block is True, each layer has a router + experts alongside
   the standard MLP. The MoE output is combined with the MLP output. HF handles
   the routing logic natively; the bridge exposes router/experts as submodules.
+- PLE: when hidden_size_per_layer_input > 0, each layer has a per-layer embedding
+  gate and projection. Model-level per-layer embedding and projection components
+  are also exposed for hook access.
 """
 
 from typing import Any
@@ -76,6 +80,8 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
         n_heads = self.cfg.n_heads
         n_kv_heads = getattr(self.cfg, "n_key_value_heads", n_heads)
         n_global_kv_heads = getattr(self.cfg, "num_global_key_value_heads", n_kv_heads)
+        enable_moe = getattr(self.cfg, "enable_moe_block", False)
+        ple_dim = getattr(self.cfg, "hidden_size_per_layer_input", 0) or 0
 
         # Build per-layer weight conversions. Gemma 4 has different head_dim and
         # n_kv_heads for sliding vs full attention layers, so we generate
@@ -127,6 +133,20 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
                 f"blocks.{i}.mlp.out.weight"
             ] = ParamProcessingConversion(tensor_conversion=TransposeTensorConversion())
 
+        # PLE weight conversions (per-layer gate and projection are Linear layers)
+        if ple_dim > 0:
+            for i in range(n_layers):
+                self.weight_processing_conversions[
+                    f"blocks.{i}.ple_gate.weight"
+                ] = ParamProcessingConversion(tensor_conversion=TransposeTensorConversion())
+                self.weight_processing_conversions[
+                    f"blocks.{i}.ple_proj.weight"
+                ] = ParamProcessingConversion(tensor_conversion=TransposeTensorConversion())
+            # Model-level PLE projection
+            self.weight_processing_conversions["ple_model_proj.weight"] = ParamProcessingConversion(
+                tensor_conversion=TransposeTensorConversion()
+            )
+
         # Unembed weight conversion
         self.weight_processing_conversions["unembed.weight"] = ParamProcessingConversion(
             tensor_conversion=TransposeTensorConversion(),
@@ -168,11 +188,21 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
             ),
         }
 
+        # PLE support: when hidden_size_per_layer_input > 0, each decoder layer
+        # has a per-layer embedding gate, projection, and norm. HF handles the
+        # PLE computation natively; the bridge exposes components for hook access.
+        ple_dim = getattr(self.cfg, "hidden_size_per_layer_input", 0) or 0
+        if ple_dim > 0:
+            block_submodules["ple_gate"] = LinearBridge(name="per_layer_input_gate")
+            block_submodules["ple_proj"] = LinearBridge(name="per_layer_projection")
+            block_submodules["ple_norm"] = RMSNormalizationBridge(
+                name="post_per_layer_input_norm", config=self.cfg
+            )
+
         # MoE support: when enable_moe_block is True, each decoder layer has a
         # router + experts alongside the standard MLP. The MoE output is combined
         # with the MLP output inside HF's forward pass. We expose the router as
         # a MoEBridge for hook access (hook_router_scores).
-        enable_moe = getattr(self.cfg, "enable_moe_block", False)
         if enable_moe:
             block_submodules["moe"] = MoEBridge(
                 name="experts",
@@ -202,6 +232,19 @@ class Gemma4ArchitectureAdapter(ArchitectureAdapter):
             "ln_final": RMSNormalizationBridge(name="model.norm", config=self.cfg),
             "unembed": UnembeddingBridge(name="lm_head"),
         }
+
+        # PLE model-level components: per-layer embedding table, projection,
+        # and projection norm. These are children of Gemma4TextModel (model.*).
+        if ple_dim > 0:
+            self.component_mapping["ple_embed"] = EmbeddingBridge(
+                name="model.embed_tokens_per_layer"
+            )
+            self.component_mapping["ple_model_proj"] = LinearBridge(
+                name="model.per_layer_model_projection"
+            )
+            self.component_mapping["ple_model_proj_norm"] = RMSNormalizationBridge(
+                name="model.per_layer_projection_norm", config=self.cfg
+            )
 
     def setup_hook_compatibility(self, bridge: Any) -> None:
         """Setup hook compatibility for Gemma4 models.
